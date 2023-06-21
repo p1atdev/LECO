@@ -9,9 +9,10 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from diffusers import UNet2DConditionModel
 from safetensors.torch import save_file
-from tqdm import tqdm
 
+from tqdm import tqdm
 
 # UNET_DEFAULT_TARGET_REPLACE = {"CrossAttention", "Attention", "GEGLU"}
 # UNET_EXTENDED_TARGET_REPLACE = {"ResnetBlock2D", "CrossAttention", "Attention", "GEGLU"}
@@ -101,28 +102,25 @@ class LoRAModule(nn.Module):
 class LoRANetwork(nn.Module):
     def __init__(
         self,
-        diffuser,
+        unet: UNet2DConditionModel,
         rank=4,
         multiplier=1.0,
         alpha=1,
     ) -> None:
         super().__init__()
 
-        model = diffuser
+        # model = diffuser
         self.multiplier = multiplier
         self.lora_dim = rank
         self.alpha = alpha
-        # self.target_block = "up_blocks" if up_only else ""
 
         # LoRAのみ
         self.module = LoRAModule
 
-        # util.freeze(self.model)
-
         # unetのloraを作る
         self.unet_loras = self.create_modules(
             LORA_PREFIX_UNET,
-            model.unet,
+            unet,
             UNET_TARGET_REPLACE_MODULE_TRANSFORMER,
             self.lora_dim,
             self.multiplier,
@@ -133,7 +131,7 @@ class LoRANetwork(nn.Module):
         # 空のloraを作る(学習しない)
         self.empty_loras = self.create_modules(
             EMPTY_PREFIX_UNET,  # 名前をわけて、場所によって multiplier を変更して適用を切り替える
-            model.unet,
+            unet,
             UNET_TARGET_REPLACE_MODULE_TRANSFORMER,
             self.lora_dim,
             multiplier=0,
@@ -203,10 +201,6 @@ class LoRANetwork(nn.Module):
                         loras.append(lora)
         return loras
 
-    # def backward(self, loss):
-    #     super().backward(loss)
-    #     print(self.mode)
-
     def prepare_optimizer_params(self):
         self.requires_grad_(True)
         all_params = []
@@ -249,71 +243,3 @@ class LoRANetwork(nn.Module):
             lora.multiplier = 0
         for empty in self.empty_loras:
             empty.multiplier = 1.0
-
-    # def predict_noise(
-    #     self, iteration, latents, text_embeddings, guidance_scale=7.5, v_pred=False
-    # ):
-    #     # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
-    #     latents = torch.cat([latents] * 2)
-
-    #     latents = self.model.scheduler.scale_model_input(
-    #         latents, self.model.scheduler.timesteps[iteration]
-    #     )
-
-    #     # predict the noise residual
-    #     noise_prediction = self.model.unet(
-    #         latents,
-    #         self.model.scheduler.timesteps[iteration],
-    #         encoder_hidden_states=text_embeddings,
-    #     ).sample
-
-    #     # TODO: v_parameterization?
-    #     if v_pred:
-    #         target = self.model.scheduler.get_velocity(
-    #             latents, noise_prediction, iteration
-    #         )
-    #     else:
-    #         target = noise_prediction
-
-    #     # perform guidance
-    #     noise_prediction_uncond, noise_prediction_text = target.chunk(2)
-    #     guided_target = noise_prediction_uncond + guidance_scale * (
-    #         noise_prediction_text - noise_prediction_uncond
-    #     )
-
-    #     return guided_target
-
-    # @torch.no_grad()
-    # def diffusion(
-    #     self,
-    #     latents,
-    #     text_embeddings,
-    #     end_iteration=1000,
-    #     start_iteration=0,
-    #     return_steps=False,
-    #     pred_x0=False,
-    #     **kwargs,
-    # ):
-    #     latents_steps = []
-
-    #     for iteration in tqdm(range(start_iteration, end_iteration)):
-    #         noise_pred = self.predict_noise(
-    #             iteration, latents, text_embeddings, **kwargs
-    #         )
-
-    #         # compute the previous noisy sample x_t -> x_t-1
-    #         output = self.model.scheduler.step(
-    #             noise_pred, self.model.scheduler.timesteps[iteration], latents
-    #         )
-
-    #         latents = output.prev_sample
-
-    #         if return_steps or iteration == end_iteration - 1:
-    #             output = output.pred_original_sample if pred_x0 else latents
-
-    #             if return_steps:
-    #                 latents_steps.append(output.cpu())
-    #             else:
-    #                 latents_steps.append(output)
-
-    #     return latents_steps

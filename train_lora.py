@@ -2,8 +2,6 @@
 
 from typing import List
 
-from StableDiffuser import StableDiffuser
-
 # from diffusers import AutoencoderKL, UNet2DConditionModel
 import torch
 from tqdm import tqdm
@@ -12,6 +10,10 @@ import argparse
 from pathlib import Path
 
 from lora import DEFAULT_TARGET_REPLACE, LoRANetwork
+import train_util
+import model_util
+
+DEVICE_CUDA = "cuda"
 
 
 # デバッグ用...
@@ -70,18 +72,20 @@ def train(
     elif precision == "bfloat16":
         weight_dtype = torch.bfloat16
 
-    diffuser = StableDiffuser(
-        pretrained_model_name_or_path=pretrained_model,
-        scheduler="DDIM",
-        device="cuda",
-        dtype=weight_dtype,
-    )  # .to("cuda", dtype=weight_dtype)
-    # diffuser.eval()
+    tokenizer, text_encoder, unet, scheduler = model_util.load_models(
+        pretrained_model, scheduler_name="ddpm", v2=False, v_pred=v_pred
+    )
+
+    text_encoder.to(DEVICE_CUDA, dtype=weight_dtype)
+    text_encoder.eval()
+
+    unet.to(DEVICE_CUDA, dtype=weight_dtype)
+    unet.eval()
 
     # util.freeze(diffuser)
 
-    network = LoRANetwork(diffuser, rank=rank, multiplier=1.0, alpha=1).to(
-        "cuda", dtype=weight_dtype
+    network = LoRANetwork(unet, rank=rank, multiplier=1.0, alpha=1).to(
+        DEVICE_CUDA, dtype=weight_dtype
     )
     # network.train()
 
@@ -91,14 +95,18 @@ def train(
     pbar = tqdm(range(iterations))
 
     with torch.no_grad():
-        neutral_text_embeddings = diffuser.get_text_embeddings([""], n_imgs=1)
-        positive_text_embeddings = diffuser.get_text_embeddings([prompt], n_imgs=1)
+        neutral_text_embeddings = train_util.get_text_embeddings(
+            tokenizer, text_encoder, [""], n_imgs=1
+        )
+        positive_text_embeddings = train_util.get_text_embeddings(
+            tokenizer, text_encoder, [prompt], n_imgs=1
+        )
 
     # print("neutral", neutral_text_embeddings.shape)
     # print("positive", positive_text_embeddings.shape)
 
-    del diffuser.text_encoder
-    del diffuser.tokenizer
+    del tokenizer
+    del text_encoder
 
     torch.cuda.empty_cache()
 
@@ -113,21 +121,23 @@ def train(
     # print("training mode: diffuser")
     # check_training_mode(diffuser)
 
-    print("diffusion structure")
-    print(diffuser)
+    # print("diffusion structure")
+    # print(diffuser)
 
     for i in pbar:
         if enable_wandb:
             wandb.log({"iteration": i})
 
         with torch.no_grad():
-            diffuser.set_scheduler_timesteps(nsteps)
+            scheduler.set_timesteps(nsteps, device=DEVICE_CUDA)
 
             optimizer.zero_grad()
 
             iteration = torch.randint(1, nsteps - 1, (1,)).item()
 
-            latents = diffuser.get_initial_latents(1, 512, 1)
+            latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
+                DEVICE_CUDA, dtype=weight_dtype
+            )
 
             # デバッグ用: multiplierを確認する
             # print("before_enter_multiplier unet:", network.unet_loras[0].multiplier)
@@ -138,35 +148,49 @@ def train(
                 # デバッグ用
                 # print("in_enter_multiplier unet:", network.unet_loras[0].multiplier)
                 # print("in_enter_multiplier empty:", network.empty_loras[0].multiplier)
-                latents_steps, _ = diffuser.diffusion(
+                latents_steps = train_util.diffusion(
+                    unet,
+                    scheduler,
                     latents,
                     positive_text_embeddings,
                     start_iteration=0,
                     end_iteration=iteration,
                     guidance_scale=3,
-                    v_pred=v_pred,
+                    # v_pred=v_pred,
                 )
                 # print("latents_steps", len(latents_steps))
             # デバッグ用
             # print("after_exit_multiplier unet:", network.unet_loras[0].multiplier)
             # print("after_exit_multiplier empty:", network.empty_loras[0].multiplier)
 
-            diffuser.set_scheduler_timesteps(1000)
+            scheduler.set_timesteps(1000)
 
             iteration = int(iteration / nsteps * 1000)
 
             # with network の外では空の学習しないLoRAのみを有効にする(はず...)
-            positive_latents = diffuser.predict_noise(
-                iteration, latents_steps[0], positive_text_embeddings, guidance_scale=1
+            positive_latents = train_util.predict_noise(
+                unet,
+                scheduler,
+                iteration,
+                latents_steps[0],
+                positive_text_embeddings,
+                guidance_scale=1,
             ).float()
             print("positive_latents", positive_latents[0, 0, :5, :5])
-            neutral_latents = diffuser.predict_noise(
-                iteration, latents_steps[0], neutral_text_embeddings, guidance_scale=1
+            neutral_latents = train_util.predict_noise(
+                unet,
+                scheduler,
+                iteration,
+                latents_steps[0],
+                neutral_text_embeddings,
+                guidance_scale=1,
             ).float()
             print("neutral_latents", neutral_latents[0, 0, :5, :5])
 
         with network:
-            negative_latents = diffuser.predict_noise(
+            negative_latents = train_util.predict_noise(
+                unet,
+                scheduler,
                 iteration,
                 latents_steps[0],
                 positive_text_embeddings,
@@ -196,7 +220,9 @@ def train(
     network.save_weights(save_path / "last.safetensors", dtype=weight_dtype)
 
     del (
-        diffuser,
+        # diffuser,
+        unet,
+        scheduler,
         loss,
         optimizer,
         network,
