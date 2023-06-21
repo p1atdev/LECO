@@ -2,7 +2,6 @@
 
 from typing import List
 
-# from diffusers import AutoencoderKL, UNet2DConditionModel
 import torch
 from tqdm import tqdm
 import wandb
@@ -14,6 +13,7 @@ import train_util
 import model_util
 
 DEVICE_CUDA = "cuda"
+DDIM_STEPS = 50
 
 
 # デバッグ用...
@@ -46,10 +46,8 @@ def train(
     precision: str = "float16",
     enable_wandb: bool = False,
 ):
-    nsteps = 50
-
     if enable_wandb:
-        wandb.init(project="LED")
+        wandb.init(project="LESD")
         wandb.config = {
             "prompt": prompt,
             "pretrained_model": pretrained_model,
@@ -73,7 +71,7 @@ def train(
         weight_dtype = torch.bfloat16
 
     tokenizer, text_encoder, unet, scheduler = model_util.load_models(
-        pretrained_model, scheduler_name="ddpm", v2=False, v_pred=v_pred
+        pretrained_model, scheduler_name="ddpm", v2=False, v_pred=v_pred  # とりあえずv1
     )
 
     text_encoder.to(DEVICE_CUDA, dtype=weight_dtype)
@@ -129,11 +127,15 @@ def train(
             wandb.log({"iteration": i})
 
         with torch.no_grad():
-            scheduler.set_timesteps(nsteps, device=DEVICE_CUDA)
+            scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
 
             optimizer.zero_grad()
 
-            iteration = torch.randint(1, nsteps - 1, (1,)).item()
+            # 1 ~ 48 からランダム
+            timesteps_from = torch.randint(1, DDIM_STEPS - 1, (1,)).item()
+            timesteps_end = round((timesteps_from / DDIM_STEPS) * 1000)
+
+            print("from", timesteps_from, "end", timesteps_end)
 
             latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
                 DEVICE_CUDA, dtype=weight_dtype
@@ -153,25 +155,28 @@ def train(
                     scheduler,
                     latents,
                     positive_text_embeddings,
-                    start_iteration=0,
-                    end_iteration=iteration,
+                    start_timesteps=0,
+                    total_timesteps=timesteps_from,
                     guidance_scale=3,
+                    return_steps=False,
                     # v_pred=v_pred,
                 )
-                # print("latents_steps", len(latents_steps))
+
+            # print("latents_steps", len(latents_steps))
+            # for latent in latents_steps:
+            #     print(latent[0, 0, :5, :5]) # 一応ちゃんとデノイズはしているらしい
+
             # デバッグ用
             # print("after_exit_multiplier unet:", network.unet_loras[0].multiplier)
             # print("after_exit_multiplier empty:", network.empty_loras[0].multiplier)
 
             scheduler.set_timesteps(1000)
 
-            iteration = int(iteration / nsteps * 1000)
-
             # with network の外では空の学習しないLoRAのみを有効にする(はず...)
             positive_latents = train_util.predict_noise(
                 unet,
                 scheduler,
-                iteration,
+                timesteps_end,
                 latents_steps[0],
                 positive_text_embeddings,
                 guidance_scale=1,
@@ -180,7 +185,7 @@ def train(
             neutral_latents = train_util.predict_noise(
                 unet,
                 scheduler,
-                iteration,
+                timesteps_end,
                 latents_steps[0],
                 neutral_text_embeddings,
                 guidance_scale=1,
@@ -191,7 +196,7 @@ def train(
             negative_latents = train_util.predict_noise(
                 unet,
                 scheduler,
-                iteration,
+                timesteps_end,
                 latents_steps[0],
                 positive_text_embeddings,
                 guidance_scale=1,

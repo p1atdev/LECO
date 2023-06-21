@@ -1,7 +1,7 @@
 import torch
 
 from transformers import CLIPTextModel, CLIPTokenizer, BatchEncoding
-from diffusers import UNet2DConditionModel, SchedulerMixin
+from diffusers import UNet2DConditionModel, SchedulerMixin, ModelMixin
 
 from tqdm import tqdm
 
@@ -74,21 +74,20 @@ def get_text_embeddings(
 def predict_noise(
     unet: UNet2DConditionModel,
     scheduler: SchedulerMixin,
-    iteration: int,
+    timesteps: int,  # 現在のタイムステップ
     latents: torch.Tensor,
     text_embeddings: torch.Tensor,
     guidance_scale=7.5,
-    # v_pred=False,
 ):
     # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
     latents = torch.cat([latents] * 2)
 
-    latents = scheduler.scale_model_input(latents, scheduler.timesteps[iteration])
+    latents = scheduler.scale_model_input(latents, scheduler.timesteps[timesteps])
 
     # predict the noise residual
     noise_prediction = unet(
         latents,
-        scheduler.timesteps[iteration],
+        scheduler.timesteps[timesteps],
         encoder_hidden_states=text_embeddings,
     ).sample
 
@@ -107,14 +106,14 @@ def diffusion(
     scheduler: SchedulerMixin,
     latents,
     text_embeddings,
-    end_iteration=1000,
-    start_iteration=0,
+    total_timesteps=1000,
+    start_timesteps=0,
     return_steps=False,
     **kwargs,
 ):
     latents_steps = []
 
-    for iteration in tqdm(range(start_iteration, end_iteration)):
+    for iteration in tqdm(range(start_timesteps, total_timesteps)):
         noise_pred = predict_noise(
             unet, scheduler, iteration, latents, text_embeddings, **kwargs
         )
@@ -124,7 +123,7 @@ def diffusion(
 
         latents = output.prev_sample
 
-        if return_steps or iteration == end_iteration - 1:
+        if return_steps or iteration == total_timesteps - 1:
             if return_steps:
                 latents_steps.append(latents.cpu())
             else:
