@@ -5,24 +5,18 @@
 import os
 import math
 from typing import Optional, List, Type, Set
-from pathlib import Path
 
 import torch
 import torch.nn as nn
 from diffusers import UNet2DConditionModel
 from safetensors.torch import save_file
 
-from tqdm import tqdm
-
-# UNET_DEFAULT_TARGET_REPLACE = {"CrossAttention", "Attention", "GEGLU"}
-# UNET_EXTENDED_TARGET_REPLACE = {"ResnetBlock2D", "CrossAttention", "Attention", "GEGLU"}
-
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
     "CrossAttention",  # attn2 <- ESD-x (多分)
     "Attention",  # attn1
     # "Transformer2DModel",
-    # "GEGLU",
+    "GEGLU",
 ]
 # UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
 LORA_PREFIX_UNET = "lora_unet"

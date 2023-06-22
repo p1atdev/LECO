@@ -1,4 +1,6 @@
-# ref: https://huggingface.co/spaces/baulab/Erasing-Concepts-In-Diffusion/blob/main/train.py
+# ref:
+# - https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L566
+# - https://huggingface.co/spaces/baulab/Erasing-Concepts-In-Diffusion/blob/main/train.py
 
 from typing import List, Optional
 import argparse
@@ -112,16 +114,13 @@ def train(
     torch.cuda.empty_cache()
 
     for i in pbar:
-        if enable_wandb:
-            wandb.log({"iteration": i})
-
         with torch.no_grad():
             scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
 
             optimizer.zero_grad()
 
-            # 1 ~ 48 からランダム
-            timesteps_to = torch.randint(1, DDIM_STEPS - 1, (1,)).item()
+            # 1 ~ 49 からランダム
+            timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
 
             latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
                 DEVICE_CUDA, dtype=weight_dtype
@@ -136,7 +135,6 @@ def train(
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
                     guidance_scale=3,
-                    # return_steps=False,
                 )
 
             scheduler.set_timesteps(1000)
@@ -145,7 +143,7 @@ def train(
                 int(timesteps_to * 1000 / DDIM_STEPS)
             ]
 
-            # with network の外では空の学習しないLoRAのみを有効にする(はず...)
+            # with network の外では空のLoRAのみが有効になる
             positive_latents = train_util.predict_noise(
                 unet,
                 scheduler,
@@ -184,12 +182,12 @@ def train(
 
         pbar.set_description(f"Loss: {loss.item():.4f}")
         if enable_wandb:
-            wandb.log({"loss": loss})
+            wandb.log({"loss": loss, "iteration": i})
 
         loss.backward()
         optimizer.step()
 
-        if i % save_steps == 0 and i != 0:
+        if i % save_steps == 0 and i != 0 and i != iterations - 1:
             print("Saving...")
             save_path.mkdir(parents=True, exist_ok=True)
             network.save_weights(
