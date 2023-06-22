@@ -19,13 +19,12 @@ from tqdm import tqdm
 
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    "CrossAttention",  # <- ESD-x (多分)
-    "Attention",
+    "CrossAttention",  # attn2 <- ESD-x (多分)
+    "Attention",  # attn1
     # "Transformer2DModel",
-    "GEGLU",
+    # "GEGLU",
 ]
 # UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
-TEXT_ENCODER_TARGET_REPLACE_MODULE = ["CLIPAttention", "CLIPMLP"]
 LORA_PREFIX_UNET = "lora_unet"
 LORA_PREFIX_TEXT_ENCODER = "lora_te"
 
@@ -212,7 +211,7 @@ class LoRANetwork(nn.Module):
 
         return all_params
 
-    def save_weights(self, file, dtype=None):
+    def save_weights(self, file, dtype=None, metadata: Optional[dict] = None):
         state_dict = self.state_dict()
 
         if dtype is not None:
@@ -227,7 +226,7 @@ class LoRANetwork(nn.Module):
                 del state_dict[key]
 
         if os.path.splitext(file)[1] == ".safetensors":
-            save_file(state_dict, file)
+            save_file(state_dict, file, metadata)
         else:
             torch.save(state_dict, file)
 

@@ -1,33 +1,20 @@
 # ref: https://huggingface.co/spaces/baulab/Erasing-Concepts-In-Diffusion/blob/main/train.py
 
-from typing import List
+from typing import List, Optional
+import argparse
+from pathlib import Path
 
 import torch
 from tqdm import tqdm
-import wandb
-import argparse
-from pathlib import Path
 
 from lora import DEFAULT_TARGET_REPLACE, LoRANetwork
 import train_util
 import model_util
 
+import wandb
+
 DEVICE_CUDA = "cuda"
 DDIM_STEPS = 50
-
-
-# デバッグ用...
-def check_requires_grad(model: torch.nn.Module):
-    for name, module in list(model.named_modules())[:5]:
-        if len(list(module.parameters())) > 0:
-            print(f"Module: {name}")
-            for name, param in list(module.named_parameters())[:2]:
-                print(f"    Parameter: {name}, Requires Grad: {param.requires_grad}")
-
-
-def check_training_mode(model):
-    for name, module in list(model.named_modules())[:5]:
-        print(f"Module: {name}, Training Mode: {module.training}")
 
 
 def train(
@@ -46,31 +33,48 @@ def train(
     precision: str = "bfloat16",
     scheduler_name: str = "lms",
     enable_wandb: bool = False,
+    save_steps: int = 200,
+    save_precision: str = "float",
+    save_name: Optional[str] = None,
 ):
+    if save_name == "" or save_name is None:
+        # 保存用の名前
+        save_name = prompt.replace(" ", "_")
+    metadata = {
+        "prompt": prompt,
+        "neutral_prompt": neutral_prompt,
+        "pretrained_model": pretrained_model,
+        "modules": modules,
+        "iterations": iterations,
+        "rank": rank,
+        "alpha": alpha,
+        "negative_guidance": negative_guidance,
+        "lr": lr,
+        "v2": v2,
+        "v_pred": v_pred,
+        "precision": precision,
+        "scheduler_name": scheduler_name,
+        "save_path": str(save_path),
+        "save_steps": save_steps,
+        "save_precision": save_precision,
+        "save_name": save_name,
+    }
+
     if enable_wandb:
-        wandb.init(project="LECO")
-        wandb.config = {
-            "prompt": prompt,
-            "neutral_prompt": neutral_prompt,
-            "pretrained_model": pretrained_model,
-            "modules": modules,
-            "iterations": iterations,
-            "rank": rank,
-            "alpha": alpha,
-            "negative_guidance": negative_guidance,
-            "lr": lr,
-            "v2": v2,
-            "v_pred": v_pred,
-            "precision": precision,
-            "scheduler_name": scheduler_name,
-            "save_path": str(save_path),
-        }
+        wandb.init(project=f"LECO_{save_name}")
+        wandb.config = metadata
 
     weight_dtype = torch.float32
     if precision == "float16":
         weight_dtype = torch.float16
     elif precision == "bfloat16":
         weight_dtype = torch.bfloat16
+
+    save_weight_dtype = torch.float32
+    if save_precision == "float16":
+        save_weight_dtype = torch.float16
+    elif save_precision == "bfloat16":
+        save_weight_dtype = torch.bfloat16
 
     tokenizer, text_encoder, unet, scheduler = model_util.load_models(
         pretrained_model,
@@ -106,13 +110,6 @@ def train(
     del text_encoder
 
     torch.cuda.empty_cache()
-
-    # debug
-    print("grads: network")
-    check_requires_grad(network)
-
-    print("training mode: network")
-    check_training_mode(network)
 
     for i in pbar:
         if enable_wandb:
@@ -157,7 +154,6 @@ def train(
                 positive_text_embeddings,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-            print("positive_latents", positive_latents[0, 0, :5, :5])
             neutral_latents = train_util.predict_noise(
                 unet,
                 scheduler,
@@ -166,7 +162,6 @@ def train(
                 neutral_text_embeddings,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-            print("neutral_latents", neutral_latents[0, 0, :5, :5])
 
         with network:
             negative_latents = train_util.predict_noise(
@@ -177,12 +172,10 @@ def train(
                 positive_text_embeddings,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-            print("negative_latents", negative_latents[0, 0, :5, :5])
 
         positive_latents.requires_grad = False
         neutral_latents.requires_grad = False
 
-        # FIXME: ここのロスが二回目以降nanになる (1回目も小さすぎる)
         loss = criteria(
             negative_latents,
             neutral_latents
@@ -196,14 +189,20 @@ def train(
         loss.backward()
         optimizer.step()
 
+        if i % save_steps == 0 and i != 0:
+            print("Saving...")
+            save_path.mkdir(parents=True, exist_ok=True)
+            network.save_weights(
+                save_path / f"{save_name}_{i}steps.safetensors",
+                dtype=save_weight_dtype,
+            )
+
     print("Saving...")
-
     save_path.mkdir(parents=True, exist_ok=True)
-
-    concept_name = prompt.replace(" ", "_")
-
     network.save_weights(
-        save_path / f"{concept_name}_last.safetensors", dtype=weight_dtype
+        save_path / f"{save_name}_last.safetensors",
+        dtype=save_weight_dtype,
+        metadata=metadata,
     )
 
     del (
@@ -238,6 +237,9 @@ def main(args):
     precision = args.precision
     scheduler_name = args.scheduler_name
     enable_wandb = args.use_wandb
+    save_steps = args.save_steps
+    save_precision = args.save_precision
+    save_name = args.save_name
 
     train(
         prompt,
@@ -255,6 +257,9 @@ def main(args):
         precision=precision,
         scheduler_name=scheduler_name,
         enable_wandb=enable_wandb,
+        save_steps=save_steps,
+        save_precision=save_precision,
+        save_name=save_name,
     )
 
 
@@ -307,6 +312,25 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help="Use wandb to logging.",
+    )
+    parser.add_argument(
+        "--save_steps",
+        type=int,
+        default=200,
+        help="Save weights every n steps.",
+    )
+    parser.add_argument(
+        "--save_precision",
+        type=str,
+        choices=["float", "float32", "float16", "bfloat16"],
+        default="float",
+        help="Save weights with specified precision.",
+    )
+    parser.add_argument(
+        "--save_name",
+        type=str,
+        default=None,
+        help="Save weights with specified name.",
     )
 
     args = parser.parse_args()

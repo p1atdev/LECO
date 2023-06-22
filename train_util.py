@@ -1,7 +1,7 @@
 import torch
 
-from transformers import CLIPTextModel, CLIPTokenizer, BatchEncoding
-from diffusers import UNet2DConditionModel, SchedulerMixin, ModelMixin
+from transformers import CLIPTextModel, CLIPTokenizer
+from diffusers import UNet2DConditionModel, SchedulerMixin
 
 from tqdm import tqdm
 
