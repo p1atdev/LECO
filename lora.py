@@ -152,6 +152,8 @@ class LoRANetwork(nn.Module):
             ), f"duplicated lora name: {lora.lora_name}"
             empty_names.add(lora.lora_name)
 
+        self.requires_grad_(False)
+
         # 適用する？
         for lora in self.unet_loras:
             lora.apply_to()
@@ -166,8 +168,6 @@ class LoRANetwork(nn.Module):
                 empty.lora_name,
                 empty,
             )
-
-        self.requires_grad_(True)
 
         # del unet
 
@@ -202,7 +202,6 @@ class LoRANetwork(nn.Module):
         return loras
 
     def prepare_optimizer_params(self):
-        self.requires_grad_(True)
         all_params = []
 
         if self.unet_loras:  # 実質これしかない

@@ -8,6 +8,10 @@ import wandb
 import argparse
 from pathlib import Path
 
+from PIL import Image
+from diffusers import AutoencoderKL
+from diffusers.image_processor import VaeImageProcessor
+
 from lora import DEFAULT_TARGET_REPLACE, LoRANetwork
 import train_util
 import model_util
@@ -43,29 +47,9 @@ def train(
     save_path: Path = Path("./output"),
     v2: bool = False,
     v_pred: bool = False,
-    precision: str = "bfloat16",
-    scheduler_name: str = "lms",
+    precision: str = "float16",
     enable_wandb: bool = False,
 ):
-    if enable_wandb:
-        wandb.init(project="LECO")
-        wandb.config = {
-            "prompt": prompt,
-            "neutral_prompt": neutral_prompt,
-            "pretrained_model": pretrained_model,
-            "modules": modules,
-            "iterations": iterations,
-            "rank": rank,
-            "alpha": alpha,
-            "negative_guidance": negative_guidance,
-            "lr": lr,
-            "v2": v2,
-            "v_pred": v_pred,
-            "precision": precision,
-            "scheduler_name": scheduler_name,
-            "save_path": str(save_path),
-        }
-
     weight_dtype = torch.float32
     if precision == "float16":
         weight_dtype = torch.float16
@@ -73,11 +57,13 @@ def train(
         weight_dtype = torch.bfloat16
 
     tokenizer, text_encoder, unet, scheduler = model_util.load_models(
-        pretrained_model,
-        scheduler_name=scheduler_name,
-        v2=v2,
-        v_pred=v_pred,
+        pretrained_model, scheduler_name="lms", v2=False, v_pred=v_pred  # とりあえずv1
     )
+
+    vae = AutoencoderKL.from_pretrained(pretrained_model, subfolder="vae").to(
+        DEVICE_CUDA, dtype=weight_dtype
+    )
+    vae.eval()
 
     text_encoder.to(DEVICE_CUDA, dtype=weight_dtype)
     text_encoder.eval()
@@ -85,9 +71,14 @@ def train(
     unet.to(DEVICE_CUDA, dtype=weight_dtype)
     unet.eval()
 
+    # util.freeze(diffuser)
+
     network = LoRANetwork(unet, rank=rank, multiplier=1.0, alpha=1).to(
         DEVICE_CUDA, dtype=weight_dtype
     )
+    # network.train()
+
+    # print("params", network.prepare_optimizer_params())
 
     optimizer = torch.optim.AdamW(network.prepare_optimizer_params(), lr=lr)
     criteria = torch.nn.MSELoss()
@@ -102,71 +93,58 @@ def train(
             tokenizer, text_encoder, [prompt], n_imgs=1
         )
 
+    # print("neutral", neutral_text_embeddings.shape)
+    # print("positive", positive_text_embeddings.shape)
+
     del tokenizer
     del text_encoder
 
     torch.cuda.empty_cache()
 
-    # debug
-    print("grads: network")
-    check_requires_grad(network)
+    with torch.no_grad():
+        scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
 
-    print("training mode: network")
-    check_training_mode(network)
+        optimizer.zero_grad()
 
-    for i in pbar:
-        if enable_wandb:
-            wandb.log({"iteration": i})
+        # 1 ~ 48 からランダム
+        timesteps_to = torch.randint(1, DDIM_STEPS - 1, (1,)).item()
 
-        with torch.no_grad():
-            scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
-
-            optimizer.zero_grad()
-
-            # 1 ~ 48 からランダム
-            timesteps_to = torch.randint(1, DDIM_STEPS - 1, (1,)).item()
-
-            latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
-                DEVICE_CUDA, dtype=weight_dtype
-            )
-            with network:
-                # ちょっとデノイズされれたものが入る
-                denoised_latents = train_util.diffusion(
-                    unet,
-                    scheduler,
-                    latents,  # 単純なノイズのlatentsを渡す
-                    positive_text_embeddings,
-                    start_timesteps=0,
-                    total_timesteps=timesteps_to,
-                    guidance_scale=3,
-                    # return_steps=False,
-                )
-
-            scheduler.set_timesteps(1000)
-
-            current_timestep = scheduler.timesteps[
-                int(timesteps_to * 1000 / DDIM_STEPS)
-            ]
-
-            # with network の外では空の学習しないLoRAのみを有効にする(はず...)
-            positive_latents = train_util.predict_noise(
+        latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
+            DEVICE_CUDA, dtype=weight_dtype
+        )
+        with network:
+            # ちょっとデノイズされれたものが入る
+            denoised_latents = train_util.diffusion(
                 unet,
                 scheduler,
-                current_timestep,
-                denoised_latents,
+                latents,  # 単純なノイズのlatentsを渡す
                 positive_text_embeddings,
-                guidance_scale=1,
-            ).to("cpu", dtype=torch.float32)
-            print("positive_latents", positive_latents[0, 0, :5, :5])
-            neutral_latents = train_util.predict_noise(
-                unet,
-                scheduler,
-                current_timestep,
-                denoised_latents,
-                neutral_text_embeddings,
-                guidance_scale=1,
-            ).to("cpu", dtype=torch.float32)
-            print("neutral_latents", neutral_latents[0, 0, :5, :5])
+                start_timesteps=0,
+                total_timesteps=timesteps_to,
+                guidance_scale=3,
+            )
+
+        scheduler.set_timesteps(1000)
+
+        current_timestep = scheduler.timesteps[int(timesteps_to * 1000 / DDIM_STEPS)]
+
+        # with network の外では空の学習しないLoRAのみを有効にする(はず...)
+        positive_latents = train_util.predict_noise(
+            unet,
+            scheduler,
+            current_timestep,
+            denoised_latents,
+            positive_text_embeddings,
+            guidance_scale=1,
+        )
+        neutral_latents = train_util.predict_noise(
+            unet,
+            scheduler,
+            current_timestep,
+            denoised_latents,
+            neutral_text_embeddings,
+            guidance_scale=1,
+        )
 
         with network:
             negative_latents = train_util.predict_noise(
@@ -176,45 +154,34 @@ def train(
                 denoised_latents,
                 positive_text_embeddings,
                 guidance_scale=1,
-            ).to("cpu", dtype=torch.float32)
-            print("negative_latents", negative_latents[0, 0, :5, :5])
+            )
 
-        positive_latents.requires_grad = False
-        neutral_latents.requires_grad = False
+        processor = VaeImageProcessor()
 
-        # FIXME: ここのロスが二回目以降nanになる (1回目も小さすぎる)
-        loss = criteria(
-            negative_latents,
-            neutral_latents
-            - (negative_guidance * (positive_latents - neutral_latents)),
-        )  # loss = criteria(e_n, e_0) works the best try 5000 epochs
+        for i, lat in enumerate(
+            [denoised_latents, positive_latents, neutral_latents, negative_latents]
+        ):
+            img = processor.numpy_to_pil(
+                processor.pt_to_numpy(
+                    vae.decode(lat / vae.config.scaling_factor).sample
+                )
+            )[0]
+            img.save(f"test{i}.png")
 
-        pbar.set_description(f"Loss: {loss.item():.4f}")
-        if enable_wandb:
-            wandb.log({"loss": loss})
+        print("Saving...")
 
-        loss.backward()
-        optimizer.step()
-
-    print("Saving...")
-
-    save_path.mkdir(parents=True, exist_ok=True)
-
-    concept_name = prompt.replace(" ", "_")
-
-    network.save_weights(
-        save_path / f"{concept_name}_last.safetensors", dtype=weight_dtype
-    )
+    # network.save_weights(save_path / "last.safetensors", dtype=weight_dtype)
 
     del (
         unet,
         scheduler,
-        loss,
+        # loss,
         optimizer,
         network,
         negative_latents,
         neutral_latents,
         positive_latents,
+        # latents_steps,
         latents,
     )
 
@@ -236,8 +203,6 @@ def main(args):
     v2 = args.v2
     v_pred = args.v_pred
     precision = args.precision
-    scheduler_name = args.scheduler_name
-    enable_wandb = args.use_wandb
 
     train(
         prompt,
@@ -253,8 +218,6 @@ def main(args):
         v2=v2,
         v_pred=v_pred,
         precision=precision,
-        scheduler_name=scheduler_name,
-        enable_wandb=enable_wandb,
     )
 
 
@@ -295,18 +258,6 @@ if __name__ == "__main__":
         type=str,
         choices=["float32", "float16", "bfloat16"],
         default="float16",
-    )
-    parser.add_argument(
-        "--scheduler_name",
-        type=str,
-        choices=["lms", "ddim", "ddpm", "euler_a"],
-        default="lms",
-    )
-    parser.add_argument(
-        "--use_wandb",
-        action="store_true",
-        default=False,
-        help="Use wandb to logging.",
     )
 
     args = parser.parse_args()

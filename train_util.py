@@ -71,62 +71,60 @@ def get_text_embeddings(
     return text_embeddings
 
 
+# ref: https://github.com/huggingface/diffusers/blob/0bab447670f47c28df60fbd2f6a0f833f75a16f5/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L721
 def predict_noise(
     unet: UNet2DConditionModel,
     scheduler: SchedulerMixin,
-    timesteps: int,  # 現在のタイムステップ
+    timestep: int,  # 現在のタイムステップ
     latents: torch.Tensor,
-    text_embeddings: torch.Tensor,
+    text_embeddings: torch.Tensor,  # uncond な text embed と cond な text embed を結合したもの
     guidance_scale=7.5,
-):
+) -> torch.Tensor:
     # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
-    latents = torch.cat([latents] * 2)
+    latent_model_input = torch.cat([latents] * 2)
 
-    latents = scheduler.scale_model_input(latents, scheduler.timesteps[timesteps])
+    # Ensures interchangeability with schedulers
+    # that need to scale the denoising model input
+    # depending on the current timestep.
+    # https://huggingface.co/docs/diffusers/v0.17.1/en/api/schedulers/ddim#diffusers.DDIMScheduler.scale_model_input
+    latent_model_input = scheduler.scale_model_input(latent_model_input, timestep)
 
     # predict the noise residual
-    noise_prediction = unet(
-        latents,
-        scheduler.timesteps[timesteps],
+    noise_pred = unet(
+        latent_model_input,
+        timestep,
         encoder_hidden_states=text_embeddings,
     ).sample
 
     # perform guidance
-    noise_prediction_uncond, noise_prediction_text = noise_prediction.chunk(2)
-    guided_target = noise_prediction_uncond + guidance_scale * (
-        noise_prediction_text - noise_prediction_uncond
+    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+    guided_target = noise_pred_uncond + guidance_scale * (
+        noise_pred_text - noise_pred_uncond
     )
 
     return guided_target
 
 
+# ref: https://github.com/huggingface/diffusers/blob/0bab447670f47c28df60fbd2f6a0f833f75a16f5/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L746
 @torch.no_grad()
 def diffusion(
     unet: UNet2DConditionModel,
     scheduler: SchedulerMixin,
-    latents,
-    text_embeddings,
-    total_timesteps=1000,
+    latents: torch.FloatTensor,  # ただのノイズだけのlatents
+    text_embeddings: torch.FloatTensor,
+    total_timesteps: int = 1000,
     start_timesteps=0,
-    return_steps=False,
     **kwargs,
 ):
-    latents_steps = []
+    # latents_steps = []
 
-    for iteration in tqdm(range(start_timesteps, total_timesteps)):
+    for timestep in tqdm(scheduler.timesteps[start_timesteps:total_timesteps]):
         noise_pred = predict_noise(
-            unet, scheduler, iteration, latents, text_embeddings, **kwargs
+            unet, scheduler, timestep, latents, text_embeddings, **kwargs
         )
 
         # compute the previous noisy sample x_t -> x_t-1
-        output = scheduler.step(noise_pred, scheduler.timesteps[iteration], latents)
+        latents = scheduler.step(noise_pred, timestep, latents).prev_sample
 
-        latents = output.prev_sample
-
-        if return_steps or iteration == total_timesteps - 1:
-            if return_steps:
-                latents_steps.append(latents.cpu())
-            else:
-                latents_steps.append(latents)
-
-    return latents_steps
+    # return latents_steps
+    return latents
