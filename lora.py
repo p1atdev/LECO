@@ -20,7 +20,6 @@ UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
 ]
 # UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
 LORA_PREFIX_UNET = "lora_unet"
-LORA_PREFIX_TEXT_ENCODER = "lora_te"
 
 EMPTY_PREFIX_UNET = "empty_unet"
 
@@ -51,7 +50,7 @@ class LoRAModule(nn.Module):
             self.lora_down = nn.Linear(in_dim, lora_dim, bias=False)
             self.lora_up = nn.Linear(lora_dim, out_dim, bias=False)
 
-        elif org_module.__class__.__name__ == "Conv2d":
+        elif org_module.__class__.__name__ == "Conv2d":  # 一応
             in_dim = org_module.in_channels
             out_dim = org_module.out_channels
 

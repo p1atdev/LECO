@@ -28,7 +28,7 @@ def train(
     rank: int = 4,
     alpha: float = 1.0,
     negative_guidance: float = 1.0,
-    lr: float = 1e-5,
+    lr: float = 1e-4,
     save_path: Path = Path("./output"),
     v2: bool = False,
     v_pred: bool = False,
@@ -46,7 +46,7 @@ def train(
         "prompt": prompt,
         "neutral_prompt": neutral_prompt,
         "pretrained_model": pretrained_model,
-        "modules": modules,
+        "modules": ", ".join(modules),
         "iterations": iterations,
         "rank": rank,
         "alpha": alpha,
@@ -102,7 +102,7 @@ def train(
 
     with torch.no_grad():
         neutral_text_embeddings = train_util.get_text_embeddings(
-            tokenizer, text_encoder, [""], n_imgs=1
+            tokenizer, text_encoder, [neutral_prompt], n_imgs=1
         )
         positive_text_embeddings = train_util.get_text_embeddings(
             tokenizer, text_encoder, [prompt], n_imgs=1
@@ -126,7 +126,7 @@ def train(
                 DEVICE_CUDA, dtype=weight_dtype
             )
             with network:
-                # ちょっとデノイズされれたものが入る
+                # ちょっとデノイズされれたものが返る
                 denoised_latents = train_util.diffusion(
                     unet,
                     scheduler,
@@ -143,7 +143,7 @@ def train(
                 int(timesteps_to * 1000 / DDIM_STEPS)
             ]
 
-            # with network の外では空のLoRAのみが有効になる
+            # with network: の外では空のLoRAのみが有効になる
             positive_latents = train_util.predict_noise(
                 unet,
                 scheduler,
@@ -200,7 +200,6 @@ def train(
     network.save_weights(
         save_path / f"{save_name}_last.safetensors",
         dtype=save_weight_dtype,
-        metadata=metadata,
     )
 
     del (

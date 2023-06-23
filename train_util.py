@@ -64,6 +64,7 @@ def get_text_embeddings(
     unconditional_tokens = text_tokenize(tokenizer, [""] * len(prompts))
     unconditional_embeddings = text_encode(text_encoder, unconditional_tokens)
 
+    # CFG
     text_embeddings = torch.cat(
         [unconditional_embeddings, text_embeddings]
     ).repeat_interleave(n_imgs, dim=0)
@@ -83,10 +84,6 @@ def predict_noise(
     # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
     latent_model_input = torch.cat([latents] * 2)
 
-    # Ensures interchangeability with schedulers
-    # that need to scale the denoising model input
-    # depending on the current timestep.
-    # https://huggingface.co/docs/diffusers/v0.17.1/en/api/schedulers/ddim#diffusers.DDIMScheduler.scale_model_input
     latent_model_input = scheduler.scale_model_input(latent_model_input, timestep)
 
     # predict the noise residual
