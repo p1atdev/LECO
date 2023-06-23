@@ -81,16 +81,7 @@ Sample images are SOON™️.
 
 ## References
 
-Without these amazing projects, this work wouldn't exist. Thank you.
-
-```bibtex
-@article{gandikota2023erasing,
-  title={Erasing Concepts from Diffusion Models},
-  author={Rohit Gandikota and Joanna Materzy\'nska and Jaden Fiotto-Kaufman and David Bau},
-  journal={arXiv preprint arXiv:2303.07345},
-  year={2023}
-}
-```
+I am deeply inspired by and my work relies on the outstanding efforts of the following projects. I want to express my profound gratitude to these projects and their developers:
 
 - https://github.com/rohitgandikota/erasing: Erasing Concepts from Diffusion Models 
   - https://huggingface.co/spaces/baulab/Erasing-Concepts-In-Diffusion: Demo of ESD 
