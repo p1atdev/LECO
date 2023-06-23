@@ -29,6 +29,7 @@ def train(
     alpha: float = 1.0,
     negative_guidance: float = 1.0,
     lr: float = 1e-4,
+    resolution: int = 512,
     save_path: Path = Path("./output"),
     v2: bool = False,
     v_pred: bool = False,
@@ -52,6 +53,7 @@ def train(
         "alpha": alpha,
         "negative_guidance": negative_guidance,
         "lr": lr,
+        "resolution": resolution,
         "v2": v2,
         "v_pred": v_pred,
         "precision": precision,
@@ -89,6 +91,7 @@ def train(
     text_encoder.eval()
 
     unet.to(DEVICE_CUDA, dtype=weight_dtype)
+    unet.enable_xformers_memory_efficient_attention()
     unet.eval()
 
     network = LoRANetwork(unet, rank=rank, multiplier=1.0, alpha=1).to(
@@ -122,7 +125,7 @@ def train(
             # 1 ~ 49 からランダム
             timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
 
-            latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
+            latents = train_util.get_initial_latents(scheduler, 1, resolution, 1).to(
                 DEVICE_CUDA, dtype=weight_dtype
             )
             with network:
@@ -228,6 +231,7 @@ def main(args):
     iterations = args.iterations
     negative_guidance = args.negative_guidance
     lr = args.lr
+    resolution = args.resolution
     save_path = Path(args.save_path).resolve()
     v2 = args.v2
     v_pred = args.v_pred
@@ -248,6 +252,7 @@ def main(args):
         alpha=alpha,
         negative_guidance=negative_guidance,
         lr=lr,
+        resolution=resolution,
         save_path=save_path,
         v2=v2,
         v_pred=v_pred,
@@ -287,6 +292,7 @@ if __name__ == "__main__":
         "--negative_guidance", type=float, default=1.0, help="Negative guidance"
     )
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--resolution", type=int, default=512, help="Resolution")
     parser.add_argument("--save_path", default="./output", help="Path to save weights")
     parser.add_argument("--v2", action="store_true", default=False, help="Use v2 model")
     parser.add_argument(
