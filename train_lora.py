@@ -5,13 +5,18 @@
 from typing import List, Optional
 import argparse
 from pathlib import Path
+import json
+import gc
 
 import torch
 from tqdm import tqdm
 
-from lora import DEFAULT_TARGET_REPLACE, LoRANetwork
+
+from lora import LoRANetwork, DEFAULT_TARGET_REPLACE
 import train_util
 import model_util
+import prompt_util
+from prompt_util import PromptCache, PromptPair, PromptSettings
 
 import wandb
 
@@ -19,16 +24,20 @@ DEVICE_CUDA = "cuda"
 DDIM_STEPS = 50
 
 
+def flush():
+    torch.cuda.empty_cache()
+    gc.collect()
+
+
 def train(
-    prompt: str,
+    prompts: list[PromptSettings],
     pretrained_model: str,
     modules: List[str],
     iterations: int,
-    neutral_prompt: str = "",
     rank: int = 4,
     alpha: float = 1.0,
-    negative_guidance: float = 1.0,
     lr: float = 1e-4,
+    resolution: int = 512,
     save_path: Path = Path("./output"),
     v2: bool = False,
     v_pred: bool = False,
@@ -41,17 +50,16 @@ def train(
 ):
     if save_name == "" or save_name is None:
         # 保存用の名前
-        save_name = prompt.replace(" ", "_")
+        save_name = "Untitled"
     metadata = {
-        "prompt": prompt,
-        "neutral_prompt": neutral_prompt,
+        "prompts": json.dumps(prompts),
         "pretrained_model": pretrained_model,
         "modules": ", ".join(modules),
         "iterations": iterations,
         "rank": rank,
         "alpha": alpha,
-        "negative_guidance": negative_guidance,
         "lr": lr,
+        "resolution": resolution,
         "v2": v2,
         "v_pred": v_pred,
         "precision": precision,
@@ -89,6 +97,7 @@ def train(
     text_encoder.eval()
 
     unet.to(DEVICE_CUDA, dtype=weight_dtype)
+    unet.enable_xformers_memory_efficient_attention()
     unet.eval()
 
     network = LoRANetwork(unet, rank=rank, multiplier=1.0, alpha=1).to(
@@ -100,18 +109,36 @@ def train(
 
     pbar = tqdm(range(iterations))
 
+    cache = PromptCache()
+    prompt_pairs: list[PromptPair] = []
+
     with torch.no_grad():
-        neutral_text_embeddings = train_util.get_text_embeddings(
-            tokenizer, text_encoder, [neutral_prompt], n_imgs=1
-        )
-        positive_text_embeddings = train_util.get_text_embeddings(
-            tokenizer, text_encoder, [prompt], n_imgs=1
-        )
+        cache[""] = train_util.encode_prompts(tokenizer, text_encoder, [""])
+
+        for settings in prompts:
+            for key in ["target", "positive", "neutral", "unconditional"]:
+                if cache[settings[key]] == None:
+                    cache[settings[key]] = train_util.encode_prompts(
+                        tokenizer, text_encoder, [settings[key]]
+                    )
+            prompt_pairs.append(
+                PromptPair(
+                    criteria,
+                    cache[settings["target"]],
+                    cache[settings["positive"]],
+                    cache[settings["unconditional"]],
+                    cache[settings["neutral"]],
+                    settings["guidance_scale"],
+                    settings["action"],
+                )
+            )
 
     del tokenizer
     del text_encoder
 
-    torch.cuda.empty_cache()
+    flush()
+
+    n_imgs = 1
 
     for i in pbar:
         with torch.no_grad():
@@ -119,19 +146,26 @@ def train(
 
             optimizer.zero_grad()
 
+            prompt_pair: PromptPair = prompt_pairs[
+                torch.randint(0, len(prompt_pairs), (1,)).item()
+            ]
+
             # 1 ~ 49 からランダム
             timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
 
-            latents = train_util.get_initial_latents(scheduler, 1, 512, 1).to(
-                DEVICE_CUDA, dtype=weight_dtype
-            )
+            latents = train_util.get_initial_latents(
+                scheduler, n_imgs, resolution, 1
+            ).to(DEVICE_CUDA, dtype=weight_dtype)
+
             with network:
                 # ちょっとデノイズされれたものが返る
                 denoised_latents = train_util.diffusion(
                     unet,
                     scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
-                    positive_text_embeddings,
+                    train_util.concat_embeddings(
+                        prompt_pair.positive, cache[""], n_imgs
+                    ),
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
                     guidance_scale=3,
@@ -149,7 +183,7 @@ def train(
                 scheduler,
                 current_timestep,
                 denoised_latents,
-                positive_text_embeddings,
+                train_util.concat_embeddings(prompt_pair.positive, cache[""], n_imgs),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
             neutral_latents = train_util.predict_noise(
@@ -157,28 +191,49 @@ def train(
                 scheduler,
                 current_timestep,
                 denoised_latents,
-                neutral_text_embeddings,
+                train_util.concat_embeddings(prompt_pair.neutral, cache[""], n_imgs),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-
-        with network:
-            negative_latents = train_util.predict_noise(
+            unconditional_latents = train_util.predict_noise(
                 unet,
                 scheduler,
                 current_timestep,
                 denoised_latents,
-                positive_text_embeddings,
+                train_util.concat_embeddings(
+                    prompt_pair.unconditional, cache[""], n_imgs
+                ),
+                guidance_scale=1,
+            ).to("cpu", dtype=torch.float32)
+
+        with network:
+            target_latents = train_util.predict_noise(
+                unet,
+                scheduler,
+                current_timestep,
+                denoised_latents,
+                train_util.concat_embeddings(prompt_pair.target, cache[""], n_imgs),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
 
         positive_latents.requires_grad = False
         neutral_latents.requires_grad = False
 
-        loss = criteria(
-            negative_latents,
-            neutral_latents
-            - (negative_guidance * (positive_latents - neutral_latents)),
-        )  # loss = criteria(e_n, e_0) works the best try 5000 epochs
+        loss = prompt_pair.loss(
+            target_latents=target_latents,
+            positive_latents=positive_latents,
+            neutral_latents=neutral_latents,
+            unconditional_latents=unconditional_latents,
+        )
+
+        del (
+            positive_latents,
+            neutral_latents,
+            unconditional_latents,
+            target_latents,
+            latents,
+        )
+
+        flush()
 
         pbar.set_description(f"Loss: {loss.item():.4f}")
         if enable_wandb:
@@ -208,26 +263,21 @@ def train(
         loss,
         optimizer,
         network,
-        negative_latents,
-        neutral_latents,
-        positive_latents,
-        latents,
     )
 
-    torch.cuda.empty_cache()
+    flush()
 
     print("Done.")
 
 
 def main(args):
-    prompt = args.prompt
-    neutral_prompt = args.neutral_prompt
+    prompts_file = args.prompts_file
     pretrained_model = args.pretrained_model
     rank = args.rank
     alpha = args.alpha
     iterations = args.iterations
-    negative_guidance = args.negative_guidance
     lr = args.lr
+    resolution = args.resolution
     save_path = Path(args.save_path).resolve()
     v2 = args.v2
     v_pred = args.v_pred
@@ -238,16 +288,17 @@ def main(args):
     save_precision = args.save_precision
     save_name = args.save_name
 
+    prompts = prompt_util.load_prompts_from_yaml(prompts_file)
+
     train(
-        prompt,
+        prompts,
         pretrained_model,
         modules=DEFAULT_TARGET_REPLACE,
-        neutral_prompt=neutral_prompt,
         iterations=iterations,
         rank=rank,
         alpha=alpha,
-        negative_guidance=negative_guidance,
         lr=lr,
+        resolution=resolution,
         save_path=save_path,
         v2=v2,
         v_pred=v_pred,
@@ -263,14 +314,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--prompt",
+        "--prompts_file",
         required=True,
-        help="Prompt of a concept to delete, emphasis, or swap.",
-    )
-    parser.add_argument(
-        "--neutral_prompt",
-        default="",
-        help="Prompt of neautral condition.",
+        help="YAML file of settings of prompts.",
     )
     parser.add_argument(
         "--pretrained_model",
@@ -283,10 +329,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations", type=int, default=1000, help="Number of iterations"
     )
-    parser.add_argument(
-        "--negative_guidance", type=float, default=1.0, help="Negative guidance"
-    )
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--resolution", type=int, default=512, help="Resolution")
     parser.add_argument("--save_path", default="./output", help="Path to save weights")
     parser.add_argument("--v2", action="store_true", default=False, help="Use v2 model")
     parser.add_argument(
