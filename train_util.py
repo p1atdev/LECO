@@ -3,6 +3,8 @@ import torch
 from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import UNet2DConditionModel, SchedulerMixin
 
+from prompt_util import PromptPair
+
 from tqdm import tqdm
 
 UNET_IN_CHANNELS = 4  # Stable Diffusion の in_channels は 4 で固定
@@ -50,6 +52,25 @@ def text_tokenize(tokenizer: CLIPTokenizer, prompts: list[str]):
 
 def text_encode(text_encoder: CLIPTextModel, tokens):
     return text_encoder(tokens.input_ids.to(text_encoder.device))[0]
+
+
+def encode_prompts(
+    tokenizer: CLIPTokenizer,
+    text_encoder: CLIPTextModel,
+    prompts: list[str],
+):
+    text_tokens = text_tokenize(tokenizer, prompts)
+    text_embeddings = text_encode(text_encoder, text_tokens)
+
+    return text_embeddings
+
+
+def concat_embeddings(
+    a: torch.FloatTensor,
+    b: torch.FloatTensor,
+    n_imgs: int,
+):
+    return torch.cat([a, b]).repeat_interleave(n_imgs, dim=0)
 
 
 def get_text_embeddings(

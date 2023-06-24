@@ -13,15 +13,25 @@ from safetensors.torch import save_file
 
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    "CrossAttention",  # attn2 <- ESD-x (多分)
-    "Attention",  # attn1
+    # "CrossAttnUpBlock2D",  # ???
+    # "UNetMidBlock2DCrossAttn",
+    # "CrossAttnDownBlock2D",
     # "Transformer2DModel",
+    "Attention",  # attn1, 2
     "GEGLU",
 ]
-# UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
+UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
+
 LORA_PREFIX_UNET = "lora_unet"
 
-EMPTY_PREFIX_UNET = "empty_unet"
+ESD_X_TARGET_REPLACE_MODULE_TRANSFORMER = [
+    "CrossAttnUpBlock2D",
+    "UNetMidBlock2DCrossAttn",
+    "CrossAttnDownBlock2D",
+]
+ESD_U_TARGET_REPLACE_MODULE_TRANSFORMER = [
+    "Attention",  # ???
+]
 
 DEFAULT_TARGET_REPLACE = UNET_TARGET_REPLACE_MODULE_TRANSFORMER
 
@@ -113,40 +123,24 @@ class LoRANetwork(nn.Module):
         self.unet_loras = self.create_modules(
             LORA_PREFIX_UNET,
             unet,
-            UNET_TARGET_REPLACE_MODULE_TRANSFORMER,
+            UNET_TARGET_REPLACE_MODULE_TRANSFORMER + UNET_TARGET_REPLACE_MODULE_CONV,
             self.lora_dim,
             self.multiplier,
             train=True,
         )
         print(f"create LoRA for U-Net: {len(self.unet_loras)} modules.")
 
-        # 空のloraを作る(学習しない)
-        self.empty_loras = self.create_modules(
-            EMPTY_PREFIX_UNET,  # 名前をわけて、場所によって multiplier を変更して適用を切り替える
-            unet,
-            UNET_TARGET_REPLACE_MODULE_TRANSFORMER,
-            self.lora_dim,
-            multiplier=0,
-            train=False,
-        )
-
         # assertion 名前の被りがないか確認しているようだ
         lora_names = set()
         for lora in self.unet_loras:
             assert (
                 lora.lora_name not in lora_names
-            ), f"duplicated lora name: {lora.lora_name}"
+            ), f"duplicated lora name: {lora.lora_name}. {lora_names}"
             lora_names.add(lora.lora_name)
-        empty_names = set()
-        for lora in self.unet_loras:
-            assert (
-                lora.lora_name not in empty_names
-            ), f"duplicated lora name: {lora.lora_name}"
-            empty_names.add(lora.lora_name)
 
-        self.requires_grad_(False)
+        self.requires_grad_(False)  # ほかは学習しない
 
-        # 適用する？
+        # 適用する
         for lora in self.unet_loras:
             lora.apply_to()
             self.add_module(
@@ -154,16 +148,10 @@ class LoRANetwork(nn.Module):
                 lora,
             )
 
-        for empty in self.empty_loras:
-            empty.apply_to()
-            self.add_module(
-                empty.lora_name,
-                empty,
-            )
+        del unet
 
-        # del unet
+        torch.cuda.empty_cache()
 
-    # 見づらいのでメソッドにしちゃう
     def create_modules(
         self,
         prefix: str,
@@ -174,16 +162,14 @@ class LoRANetwork(nn.Module):
         train: bool = True,
     ) -> list:
         loras = []
+
         for name, module in root_module.named_modules():
-            if (
-                module.__class__.__name__
-                in target_replace_modules
-                # and self.target_block in name
-            ):
+            if module.__class__.__name__ in target_replace_modules:
                 for child_name, child_module in module.named_modules():
                     if child_module.__class__.__name__ in ["Linear", "Conv2d"]:
                         lora_name = prefix + "." + name + "." + child_name
                         lora_name = lora_name.replace(".", "_")
+                        print(f"{lora_name}")
                         lora = self.module(
                             lora_name, child_module, multiplier, rank, self.alpha
                         )
@@ -191,6 +177,7 @@ class LoRANetwork(nn.Module):
                             lora.requires_grad_(False)
                             lora.eval()
                         loras.append(lora)
+
         return loras
 
     def prepare_optimizer_params(self):
@@ -226,11 +213,7 @@ class LoRANetwork(nn.Module):
     def __enter__(self):
         for lora in self.unet_loras:
             lora.multiplier = 1.0
-        for empty in self.empty_loras:
-            empty.multiplier = 0
 
     def __exit__(self, exc_type, exc_value, tb):
         for lora in self.unet_loras:
             lora.multiplier = 0
-        for empty in self.empty_loras:
-            empty.multiplier = 1.0
