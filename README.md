@@ -21,7 +21,7 @@ pip install -r requirements.txt
 You need 8GB VRAM at least.
 
 ```bash
-python .\train_lora.py --prompt "van gogh style" \
+python .\train_lora.py --prompts_file "./example.yaml" \
 --pretrained_model "runwayml/stable-diffusion-v1-5" \
 --rank 4 \
 --iterations 500 \
@@ -41,8 +41,9 @@ Example settings for SDv2.1
 </summary>
 
 ```bash
-python .\train_lora.py --prompt "nendoroid" \
+python .\train_lora.py --prompts_file "./example.yaml" \
 --pretrained_model "stabilityai/stable-diffusion-2-1" \
+--resolution 768
 --rank 4 \
 --iterations 500 \
 --precision bfloat16 \
