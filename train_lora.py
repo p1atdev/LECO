@@ -17,6 +17,7 @@ import train_util
 import model_util
 import prompt_util
 from prompt_util import PromptCache, PromptPair, PromptSettings
+import debug_util
 
 import wandb
 
@@ -38,6 +39,7 @@ def train(
     alpha: float = 1.0,
     lr: float = 1e-4,
     resolution: int = 512,
+    batch_size: int = 1,
     save_path: Path = Path("./output"),
     v2: bool = False,
     v_pred: bool = False,
@@ -98,6 +100,7 @@ def train(
 
     unet.to(DEVICE_CUDA, dtype=weight_dtype)
     unet.enable_xformers_memory_efficient_attention()
+    unet.requires_grad_(False)
     unet.eval()
 
     network = LoRANetwork(unet, rank=rank, multiplier=1.0, alpha=1).to(
@@ -107,14 +110,20 @@ def train(
     optimizer = torch.optim.AdamW(network.prepare_optimizer_params(), lr=lr)
     criteria = torch.nn.MSELoss()
 
+    print("Prompts")
+    for settings in prompts:
+        print(settings)
+
+    # debug
+    debug_util.check_requires_grad(network)
+    debug_util.check_training_mode(network)
+
     pbar = tqdm(range(iterations))
 
     cache = PromptCache()
     prompt_pairs: list[PromptPair] = []
 
     with torch.no_grad():
-        cache[""] = train_util.encode_prompts(tokenizer, text_encoder, [""])
-
         for settings in prompts:
             for key in ["target", "positive", "neutral", "unconditional"]:
                 if cache[settings[key]] == None:
@@ -138,7 +147,7 @@ def train(
 
     flush()
 
-    n_imgs = 1
+    n_imgs = batch_size
 
     for i in pbar:
         with torch.no_grad():
@@ -164,7 +173,7 @@ def train(
                     scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
                     train_util.concat_embeddings(
-                        prompt_pair.positive, cache[""], n_imgs
+                        prompt_pair.unconditional, prompt_pair.positive, n_imgs
                     ),
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
@@ -183,7 +192,9 @@ def train(
                 scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(prompt_pair.positive, cache[""], n_imgs),
+                train_util.concat_embeddings(
+                    prompt_pair.unconditional, prompt_pair.positive, n_imgs
+                ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
             neutral_latents = train_util.predict_noise(
@@ -191,7 +202,9 @@ def train(
                 scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(prompt_pair.neutral, cache[""], n_imgs),
+                train_util.concat_embeddings(
+                    prompt_pair.unconditional, prompt_pair.neutral, n_imgs
+                ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
             unconditional_latents = train_util.predict_noise(
@@ -200,10 +213,14 @@ def train(
                 current_timestep,
                 denoised_latents,
                 train_util.concat_embeddings(
-                    prompt_pair.unconditional, cache[""], n_imgs
+                    prompt_pair.unconditional, prompt_pair.unconditional, n_imgs
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
+
+            print("positive_latents:", positive_latents[0, 0, :5, :5])
+            print("neutral_latents:", neutral_latents[0, 0, :5, :5])
+            print("unconditional_latents:", unconditional_latents[0, 0, :5, :5])
 
         with network:
             target_latents = train_util.predict_noise(
@@ -211,12 +228,17 @@ def train(
                 scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(prompt_pair.target, cache[""], n_imgs),
+                train_util.concat_embeddings(
+                    prompt_pair.unconditional, prompt_pair.target, n_imgs
+                ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
 
+            print("target_latents:", target_latents[0, 0, :5, :5])
+
         positive_latents.requires_grad = False
         neutral_latents.requires_grad = False
+        unconditional_latents.requires_grad = False
 
         loss = prompt_pair.loss(
             target_latents=target_latents,
@@ -225,6 +247,14 @@ def train(
             unconditional_latents=unconditional_latents,
         )
 
+        # 1000倍しないとずっと0.000...になってしまって見た目的に面白くない
+        pbar.set_description(f"Loss*1k: {loss.item()*1000:.4f}")
+        if enable_wandb:
+            wandb.log({"loss": loss, "iteration": i})
+
+        loss.backward()
+        optimizer.step()
+
         del (
             positive_latents,
             neutral_latents,
@@ -232,15 +262,7 @@ def train(
             target_latents,
             latents,
         )
-
         flush()
-
-        pbar.set_description(f"Loss: {loss.item():.4f}")
-        if enable_wandb:
-            wandb.log({"loss": loss, "iteration": i})
-
-        loss.backward()
-        optimizer.step()
 
         if i % save_steps == 0 and i != 0 and i != iterations - 1:
             print("Saving...")
@@ -278,6 +300,7 @@ def main(args):
     iterations = args.iterations
     lr = args.lr
     resolution = args.resolution
+    batch_size = args.batch_size
     save_path = Path(args.save_path).resolve()
     v2 = args.v2
     v_pred = args.v_pred
@@ -299,6 +322,7 @@ def main(args):
         alpha=alpha,
         lr=lr,
         resolution=resolution,
+        batch_size=batch_size,
         save_path=save_path,
         v2=v2,
         v_pred=v_pred,
@@ -331,6 +355,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--resolution", type=int, default=512, help="Resolution")
+    parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
     parser.add_argument("--save_path", default="./output", help="Path to save weights")
     parser.add_argument("--v2", action="store_true", default=False, help="Use v2 model")
     parser.add_argument(

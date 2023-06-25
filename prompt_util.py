@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict, Optional, Callable
+from typing import Literal, TypedDict, Optional
 
 import yaml
 from pathlib import Path
@@ -98,6 +98,9 @@ class PromptPair:
 
         elif self.action == "enhance":
             return self._enhance(**kwargs)
+
+        else:
+            raise ValueError("action must be erase or enhance")
 
 
 def load_prompts_from_yaml(path: str | Path) -> list[PromptSettings]:
