@@ -11,6 +11,6 @@ def check_requires_grad(model: torch.nn.Module):
                 print(f"    Parameter: {name}, Requires Grad: {param.requires_grad}")
 
 
-def check_training_mode(model):
+def check_training_mode(model: torch.nn.Module):
     for name, module in list(model.named_modules())[:5]:
         print(f"Module: {name}, Training Mode: {module.training}")

@@ -13,14 +13,18 @@ from safetensors.torch import save_file
 
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    # "CrossAttnUpBlock2D",  # ???
+    # "CrossAttnUpBlock2D",
     # "UNetMidBlock2DCrossAttn",
     # "CrossAttnDownBlock2D",
     # "Transformer2DModel",
     "Attention",  # attn1, 2
     # "GEGLU",
 ]
-UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
+UNET_TARGET_REPLACE_MODULE_CONV = [
+    "ResnetBlock2D",
+    "Downsample2D",
+    "Upsample2D",
+]  # locon, 3clier
 
 LORA_PREFIX_UNET = "lora_unet"
 
@@ -96,9 +100,9 @@ class LoRANetwork(nn.Module):
     def __init__(
         self,
         unet: UNet2DConditionModel,
-        rank=4,
-        multiplier=1.0,
-        alpha=1,
+        rank: int = 4,
+        multiplier: float = 1.0,
+        alpha: float = 1.0,
     ) -> None:
         super().__init__()
 

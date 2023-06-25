@@ -4,3 +4,4 @@ accelerate
 scipy
 safetensors
 pyyaml
+pydantic
