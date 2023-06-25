@@ -66,11 +66,11 @@ def encode_prompts(
 
 
 def concat_embeddings(
-    a: torch.FloatTensor,
-    b: torch.FloatTensor,
+    unconditional: torch.FloatTensor,
+    conditional: torch.FloatTensor,
     n_imgs: int,
 ):
-    return torch.cat([a, b]).repeat_interleave(n_imgs, dim=0)
+    return torch.cat([unconditional, conditional]).repeat_interleave(n_imgs, dim=0)
 
 
 def get_text_embeddings(

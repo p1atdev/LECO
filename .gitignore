@@ -164,3 +164,7 @@ wandb/
 
 # output
 output/
+
+# for testing
+/config.yaml
+/prompts.yaml

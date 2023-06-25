@@ -1,0 +1,32 @@
+prompts_file: "./prompts.yaml"
+
+pretrained_model:
+  name_or_path: "stabilityai/stable-diffusion-2-1" # currently diffusers models only
+  v2: true # true if model is v2.x
+  v_pred: true # true if model uses v-prediction
+
+network:
+  type: "lierla" # or "c3lier"
+  rank: 4
+  alpha: 1.0
+
+train:
+  precision: "bfloat16"
+  noise_scheduler: "ddim" # or "ddpm", "lms", "euler_a"
+  resolution: 512
+  iterations: 500
+  batch_size: 1
+  lr: 1e-4
+
+save:
+  name: "van_gogh"
+  path: "./output"
+  per_steps: 200
+  precision: "bfloat16"
+
+logging:
+  use_wandb: true
+  verbose: false
+
+other:
+  use_xformers: true

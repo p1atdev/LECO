@@ -13,25 +13,20 @@ from safetensors.torch import save_file
 
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    # "CrossAttnUpBlock2D",  # ???
+    # "CrossAttnUpBlock2D",
     # "UNetMidBlock2DCrossAttn",
     # "CrossAttnDownBlock2D",
     # "Transformer2DModel",
     "Attention",  # attn1, 2
-    "GEGLU",
+    # "GEGLU",
 ]
-UNET_TARGET_REPLACE_MODULE_CONV = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
+UNET_TARGET_REPLACE_MODULE_CONV = [
+    "ResnetBlock2D",
+    "Downsample2D",
+    "Upsample2D",
+]  # locon, 3clier
 
 LORA_PREFIX_UNET = "lora_unet"
-
-ESD_X_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    "CrossAttnUpBlock2D",
-    "UNetMidBlock2DCrossAttn",
-    "CrossAttnDownBlock2D",
-]
-ESD_U_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    "Attention",  # ???
-]
 
 DEFAULT_TARGET_REPLACE = UNET_TARGET_REPLACE_MODULE_TRANSFORMER
 
@@ -105,9 +100,9 @@ class LoRANetwork(nn.Module):
     def __init__(
         self,
         unet: UNet2DConditionModel,
-        rank=4,
-        multiplier=1.0,
-        alpha=1,
+        rank: int = 4,
+        multiplier: float = 1.0,
+        alpha: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -123,7 +118,7 @@ class LoRANetwork(nn.Module):
         self.unet_loras = self.create_modules(
             LORA_PREFIX_UNET,
             unet,
-            UNET_TARGET_REPLACE_MODULE_TRANSFORMER + UNET_TARGET_REPLACE_MODULE_CONV,
+            DEFAULT_TARGET_REPLACE,
             self.lora_dim,
             self.multiplier,
             train=True,
@@ -137,8 +132,6 @@ class LoRANetwork(nn.Module):
                 lora.lora_name not in lora_names
             ), f"duplicated lora name: {lora.lora_name}. {lora_names}"
             lora_names.add(lora.lora_name)
-
-        self.requires_grad_(False)  # ほかは学習しない
 
         # 適用する
         for lora in self.unet_loras:
