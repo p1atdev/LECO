@@ -6,13 +6,14 @@ The original repository: [Erasing Concepts from Diffusion Models](https://github
 
 and the project page: https://erasing.baulab.info/
 
-(Not only for erasing concepts, but also emphasizing and swapping them by devising prompts. See [ConceptMod](https://github.com/ntc-ai/conceptmod) for more details)
+(Not only for erasing concepts, but also emphasizing or swapping them by devising prompts and LoRA weight. See [ConceptMod](https://github.com/ntc-ai/conceptmod) for more details)
 
 ## Setup
 
 ```bash
 conda create -n leco python=3.10
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+pip install xformers
 pip install -r requirements.txt
 ```
 
@@ -21,44 +22,58 @@ pip install -r requirements.txt
 You need 8GB VRAM at least.
 
 ```bash
-python .\train_lora.py --prompts_file "./example.yaml" \
---pretrained_model "runwayml/stable-diffusion-v1-5" \
---rank 4 \
---iterations 500 \
---precision bfloat16 \
---negative_guidance 1.0 \
---lr 1e-4 \
---scheduler_name "ddim" \
---save_name "van_gogh" \
---use_wandb
+python ./train_lora.py --config_file "./examples/config.yaml"
 ```
 
-If you are using v2.x model, use `--v2` and using v-prediction model, use `--v_pred`.
+`config.yaml`:
 
-<details>
-<summary>
-Example settings for SDv2.1
-</summary>
+```yaml
+prompts_file: "./prompts.yaml"
 
-```bash
-python .\train_lora.py --prompts_file "./example.yaml" \
---pretrained_model "stabilityai/stable-diffusion-2-1" \
---resolution 768
---rank 4 \
---iterations 500 \
---precision bfloat16 \
---negative_guidance 1.0 \
---lr 1e-4 \
---scheduler_name "ddim" \
---save_name "nendoroid" \
---v2 \
---v_pred \
---use_wandb
+pretrained_model:
+  name_or_path: "stabilityai/stable-diffusion-2-1" # currently diffusers models only
+  v2: true # true if model is v2.x
+  v_pred: true # true if model uses v-prediction
+
+network:
+  type: "lierla" # or "c3lier"
+  rank: 4
+  alpha: 1.0
+
+train:
+  precision: "bfloat16"
+  noise_scheduler: "ddim" # "ddpm", "lms" or "euler_a" are currently avaiable
+  resolution: 512
+  iterations: 500
+  batch_size: 1
+  lr: 1e-4
+
+save:
+  name: "van_gogh"
+  path: "./output"
+  per_steps: 200
+  precision: "bfloat16"
+
+logging:
+  use_wandb: true
+  verbose: false
+
+other:
+  use_xformers: true
 ```
 
-</details>
+`prompts.yaml`:
 
-See the [train script](/train_lora.py) for more details.
+```yaml
+- target: "van gogh" # what word for erasing the positive concept from
+  positive: "van gogh" # concept to erase
+  unconditional: "" # word to take the difference from the positive concept
+  neutral: "" # starting point for conditioning the target
+  action: "erase" # erase or enhance
+  guidance_scale: 1.0
+```
+
+See the [example config](/examples/config.py) for more details.
 
 Note: You can use float16 but it is unstable and not recommended. Please use bfloat16 or float32. 
 
@@ -68,16 +83,9 @@ You can use the pretrained weights on AUTOMATIC1111's webui.
 
 🤗 HuggingFace: https://huggingface.co/p1atdev/leco
 
-- Van Gogh style (trained with "van gogh style" on SDv1.5)
-- De-real (trained with "realistic, instagram" on WDv1.5 beta 3)
+- [Van Gogh style](https://huggingface.co/p1atdev/leco/blob/main/van_gogh_sdv15.safetensors) (trained with "van gogh style" on SDv1.5)
+- [Mona Lisa](https://huggingface.co/p1atdev/leco/blob/main/mona_lisa_sdv21v.safetensors) (trained with "mona lisa" on SDv2.1-768)
 
-Sample images are SOON™️.
-
-<!-- 
-| Concept trained        | Base model                        | Sample |
-| ---------------------- | --------------------------------- | ------ |
-| "van gogh style"       | runwayml/stable-diffusion-v1-5    |        |
-| "realistic, instagram" | Birchlabs/wd-1-5-beta3-unofficial |        | --> |
 
 
 ## References
