@@ -1,0 +1,6 @@
+- target: "1girl"
+  positive: "1girl, cat ears"
+  unconditional: ""
+  neutral: ""
+  action: "enhance"
+  guidance_scale: 1.0

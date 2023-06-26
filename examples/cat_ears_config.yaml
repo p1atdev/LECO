@@ -1,0 +1,32 @@
+prompts_file: "./prompts.yaml"
+
+pretrained_model:
+  name_or_path: "Birchlabs/wd-1-5-beta3-unofficial"
+  v2: true
+  v_pred: true
+
+network:
+  type: "lierla"
+  rank: 16
+  alpha: 1.0
+
+train:
+  precision: "bfloat16"
+  noise_scheduler: "ddim"
+  resolution: 512
+  iterations: 2000
+  batch_size: 2
+  lr: 1e-4
+
+save:
+  name: "cat_ears"
+  path: "./output/cat_ears_2"
+  per_steps: 200
+  precision: "bfloat16"
+
+logging:
+  use_wandb: true
+  verbose: true
+
+other:
+  use_xformers: true
