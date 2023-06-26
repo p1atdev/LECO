@@ -156,7 +156,9 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 900866192, Size: 512x512, Model
 
 - [Cat ears](https://huggingface.co/p1atdev/leco/blob/main/cat_ears_wd15beta3.safetensors) (trained to replace "1girl" with "1girl, cat ears" on WD1.5 beta3 )
 
-Cat ears will be attached forcibly when using with 1.0~3.0 weight. If -1.0~-3.0, cat ears will never appear.
+Cat ears will be attached forcibly when using with 1.0~3.0 weight. 
+
+If -1.0~-3.0, cat ears will never appear.
 
 Training settings: see [configs](./examples/cat_ears_prompts.yaml).
 
