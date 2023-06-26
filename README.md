@@ -1,4 +1,4 @@
-# LECO ✏️ (beta)
+# LECO ✏️ 
 
 Low-rank adaptation for Erasing COncepts from diffusion models.  
 
@@ -84,8 +84,98 @@ You can use the pretrained weights on AUTOMATIC1111's webui.
 🤗 HuggingFace: https://huggingface.co/p1atdev/leco
 
 - [Van Gogh style](https://huggingface.co/p1atdev/leco/blob/main/van_gogh_sdv15.safetensors) (trained with "van gogh style" on SDv1.5)
+
+Results of `oil painting of van gogh by himself`:
+
+![van gogh](./images/van_gogh.jpg)
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+oil painting of van gogh by himself
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 3870472781, Size: 512x512, Model hash: cc6cb27103, Model: v1-5-pruned-emaonly, Clip skip: 2, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: van_gogh_4_last(db68853d039b), AddNet Weight A 1: -1.0, AddNet Weight B 1: -1.0, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "-1, 0, 1", Version: v1.3.0
+```
+
+</details>
+
+Results of `painting of scenery by monet`:
+
+![monet](./images/van_gogh_monet.jpg)
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+painting of scenery by monet
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 1284787312, Size: 512x512, Model hash: cc6cb27103, Model: v1-5-pruned-emaonly, Clip skip: 2, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: van_gogh_4_last(db68853d039b), AddNet Weight A 1: -1.0, AddNet Weight B 1: -1.0, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "-1, 0, 1", Version: v1.3.0
+```
+
+</details>
+
 - [Mona Lisa](https://huggingface.co/p1atdev/leco/blob/main/mona_lisa_sdv21v.safetensors) (trained with "mona lisa" on SDv2.1-768)
 
+
+Results of `mona lisa with jewelry`:
+
+![mona lisa](./images/mona_lisa.jpg)
+
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+mona lisa with jewelry
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 3630495347, Size: 512x512, Model hash: 832eb50c0c, Model: v2-1_768-ema-pruned, Clip skip: 2, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: mona_lisa2_last(393beb35c4b1), AddNet Weight A 1: -1.0, AddNet Weight B 1: -1.0, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "-1, 0, 1", Version: v1.3.0
+```
+
+</details>
+
+Results of `photo of a cute cat`:
+
+![mona lisa](./images/mona_lisa_cat.jpg)
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+photo of a cute cat
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 900866192, Size: 512x512, Model hash: 832eb50c0c, Model: v2-1_768-ema-pruned, Clip skip: 2, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: mona_lisa2_last(393beb35c4b1), AddNet Weight A 1: -1.0, AddNet Weight B 1: -1.0, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "-1, 0, 1", Version: v1.3.0
+```
+
+</details>
+
+
+- [Cat ears](https://huggingface.co/p1atdev/leco/blob/main/cat_ears_wd15beta3.safetensors) (trained to replace "1girl" with "1girl, cat ears" on WD1.5 beta3 )
+
+Cat ears will be attached forcibly when using with 1.0~3.0 weight. 
+
+If -1.0~-3.0, cat ears will never appear.
+
+Training settings: see [configs](./examples/cat_ears_prompts.yaml).
+
+![cat ears](./images/cat_ears.jpg)
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+masterpiece, best quality, exceptional, best aesthetic, anime, 1girl, school uniform, upper body, smile
+Negative prompt: worst quality, low quality, bad aesthetic, oldest, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, jpeg artifacts, signature, watermark, username, blurry
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 4103955758, Size: 512x512, Model hash: d38e779546, Model: wd-beta3-base-fp16, Clip skip: 2, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "0, 2, 3, 4", Version: v1.3.0
+```
+
+</details>
 
 
 ## References

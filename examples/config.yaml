@@ -25,7 +25,7 @@ save:
   precision: "bfloat16"
 
 logging:
-  use_wandb: true
+  use_wandb: false
   verbose: false
 
 other:
