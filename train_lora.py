@@ -145,7 +145,7 @@ def train(
                     scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
                     train_util.concat_embeddings(
-                        prompt_pair.unconditional, prompt_pair.positive, n_imgs
+                        prompt_pair.unconditional, prompt_pair.target, n_imgs
                     ),
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
