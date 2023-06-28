@@ -197,10 +197,10 @@ def get_lr_scheduler(
         return torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=max_iterations, eta_min=lr_min, **kwargs
         )
-    elif name == "cosine_restarts":
-        return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, eta_min=lr_min, **kwargs
-        )
+    # elif name == "cosine_restarts":
+    #     return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+    #         optimizer, eta_min=lr_min, **kwargs
+    #     )
     elif name == "step":
         return torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=max_iterations / 100, gamma=0.999, **kwargs
@@ -212,6 +212,4 @@ def get_lr_scheduler(
             optimizer, factor=0.5, total_iters=max_iterations / 100, **kwargs
         )
     else:
-        raise ValueError(
-            "Scheduler must be cosine, cosine_warmup, linear or linear_warmup"
-        )
+        raise ValueError("Scheduler must be cosine, step, linear or constant")
