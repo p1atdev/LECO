@@ -13,10 +13,10 @@ network:
 train:
   precision: "bfloat16"
   noise_scheduler: "ddim" # or "ddpm", "lms", "euler_a"
-  resolution: 512
   iterations: 500
-  batch_size: 1
   lr: 1e-4
+  optimizer: "AdamW"
+  lr_scheduler: "constant"
 
 save:
   name: "van_gogh"

@@ -4,3 +4,5 @@
   neutral: "" # starting point for conditioning the target
   action: "erase" # erase or enhance
   guidance_scale: 1.0
+  resolution: 512
+  batch_size: 2

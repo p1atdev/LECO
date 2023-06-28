@@ -4,7 +4,7 @@ import yaml
 from pathlib import Path
 
 
-from pydantic import BaseModel, ValidationError, validator
+from pydantic import BaseModel, validator, root_validator
 import torch
 
 ACTION_TYPES = Literal["erase", "enhance"]
@@ -25,23 +25,27 @@ class PromptCache:
 
 class PromptSettings(BaseModel):
     target: str
-    positive: Optional[str]  # if None, target will be used
+    positive: str = None  # if None, target will be used
     unconditional: str = ""  # default is ""
-    neutral: Optional[str]  # if None, unconditional will be used
+    neutral: str = None  # if None, unconditional will be used
     action: ACTION_TYPES = "erase"  # default is "erase"
     guidance_scale: float = 1.0  # default is 1.0
+    resolution: int = 512  # default is 512
+    batch_size: int = 1  # default is 1
 
-    @validator("positive")
-    def positive_must_be_set(cls, v, values):
-        if v is None:
-            return values["target"]
-        return v
+    @root_validator(pre=True)
+    def fill_prompts(cls, values):
+        keys = values.keys()
+        if "target" not in keys:
+            raise ValueError("target must be specified")
+        if "positive" not in keys:
+            values["positive"] = values["target"]
+        if "unconditional" not in keys:
+            values["unconditional"] = ""
+        if "neutral" not in keys:
+            values["neutral"] = values["unconditional"]
 
-    @validator("neutral")
-    def neutral_must_be_set(cls, v, values):
-        if v is None:
-            return values["unconditional"]
-        return v
+        return values
 
 
 class PromptPair:
@@ -51,6 +55,8 @@ class PromptPair:
     neutral: torch.FloatTensor  # base condition (default should be empty)
 
     guidance_scale: float
+    resolution: int
+    batch_size: int
 
     loss_fn: torch.nn.Module
     action: ACTION_TYPES
@@ -63,6 +69,8 @@ class PromptPair:
         unconditional: torch.FloatTensor,
         neutral: torch.FloatTensor,
         guidance_scale: float,
+        resolution: int,
+        batch_size: int,
         action: ACTION_TYPES,
     ) -> None:
         self.loss_fn = loss_fn
@@ -71,6 +79,8 @@ class PromptPair:
         self.unconditional = unconditional
         self.neutral = neutral
         self.guidance_scale = guidance_scale
+        self.resolution = resolution
+        self.batch_size = batch_size
         self.action = action
 
     def _erase(

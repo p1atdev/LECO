@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 
 from transformers import CLIPTextModel, CLIPTokenizer
@@ -146,3 +148,70 @@ def diffusion(
 
     # return latents_steps
     return latents
+
+
+def get_optimizer(name: str):
+    name = name.lower()
+
+    if name.startswith("dadapt"):
+        import dadaptation
+
+        if name == "dadaptadam":
+            return dadaptation.DAdaptAdam
+        elif name == "dadaptLion":
+            return dadaptation.DAdaptLion
+        else:
+            raise ValueError("DAdapt optimizer must be dadaptadam or dadaptlion")
+
+    elif name.endswith("8bit"):  # 検証してない
+        import bitsandbytes as bnb
+
+        if name == "adam8bit":
+            return bnb.optim.Adam8bit
+        elif name == "lion8bit":
+            return bnb.optim.Lion8bit
+        else:
+            raise ValueError("8bit optimizer must be adam8bit or lion8bit")
+
+    else:
+        if name == "adam":
+            return torch.optim.Adam
+        elif name == "adamw":
+            return torch.optim.AdamW
+        elif name == "lion":
+            from lion_pytorch import Lion
+
+            return Lion
+        else:
+            raise ValueError("Optimizer must be adam, adamw or lion")
+
+
+def get_lr_scheduler(
+    name: Optional[str],
+    optimizer: torch.optim.Optimizer,
+    max_iterations: Optional[int],
+    lr_min: Optional[float],
+    **kwargs,
+):
+    if name == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max_iterations, eta_min=lr_min, **kwargs
+        )
+    elif name == "cosine_restarts":
+        return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, eta_min=lr_min, **kwargs
+        )
+    elif name == "step":
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=max_iterations / 100, gamma=0.999, **kwargs
+        )
+    elif name == "constant":
+        return torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1, **kwargs)
+    elif name == "linear":
+        return torch.optim.lr_scheduler.LinearLR(
+            optimizer, factor=0.5, total_iters=max_iterations / 100, **kwargs
+        )
+    else:
+        raise ValueError(
+            "Scheduler must be cosine, cosine_warmup, linear or linear_warmup"
+        )
