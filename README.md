@@ -31,7 +31,7 @@ python ./train_lora.py --config_file "./examples/config.yaml"
 prompts_file: "./prompts.yaml"
 
 pretrained_model:
-  name_or_path: "stabilityai/stable-diffusion-2-1" # currently diffusers models only
+  name_or_path: "stabilityai/stable-diffusion-2-1" # you can also use .ckpt or .safetensors models
   v2: true # true if model is v2.x
   v_pred: true # true if model uses v-prediction
 
@@ -42,11 +42,11 @@ network:
 
 train:
   precision: "bfloat16"
-  noise_scheduler: "ddim" # "ddpm", "lms" or "euler_a" are currently avaiable
-  resolution: 512
+  noise_scheduler: "ddim" # or "ddpm", "lms", "euler_a"
   iterations: 500
-  batch_size: 1
   lr: 1e-4
+  optimizer: "AdamW"
+  lr_scheduler: "constant"
 
 save:
   name: "van_gogh"
@@ -55,7 +55,7 @@ save:
   precision: "bfloat16"
 
 logging:
-  use_wandb: true
+  use_wandb: false
   verbose: false
 
 other:
@@ -71,6 +71,8 @@ other:
   neutral: "" # starting point for conditioning the target
   action: "erase" # erase or enhance
   guidance_scale: 1.0
+  resolution: 512
+  batch_size: 2
 ```
 
 See the [example config](/examples/config.py) for more details.
@@ -83,7 +85,9 @@ You can use the pretrained weights on AUTOMATIC1111's webui.
 
 🤗 HuggingFace: https://huggingface.co/p1atdev/leco
 
-- [Van Gogh style](https://huggingface.co/p1atdev/leco/blob/main/van_gogh_sdv15.safetensors) (trained with "van gogh style" on SDv1.5)
+### SDv1.5
+
+- [Van Gogh style](https://huggingface.co/p1atdev/leco/blob/main/van_gogh_sdv15.safetensors) (trained to erase the concept of "van gogh style" on SDv1.5)
 
 Results of `oil painting of van gogh by himself`:
 
@@ -117,7 +121,9 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 1284787312, Size: 512x512, Mode
 
 </details>
 
-- [Mona Lisa](https://huggingface.co/p1atdev/leco/blob/main/mona_lisa_sdv21v.safetensors) (trained with "mona lisa" on SDv2.1-768)
+### SDv2.1-768
+
+- [Mona Lisa](https://huggingface.co/p1atdev/leco/blob/main/mona_lisa_sdv21v.safetensors) (trained to erase the concept of "mona lisa" on SDv2.1-768)
 
 
 Results of `mona lisa with jewelry`:
@@ -153,6 +159,7 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 900866192, Size: 512x512, Model
 
 </details>
 
+### WD1.5 beta3
 
 - [Cat ears](https://huggingface.co/p1atdev/leco/blob/main/cat_ears_wd15beta3.safetensors) (trained to replace "1girl" with "1girl, cat ears" on WD1.5 beta3 )
 
@@ -160,7 +167,7 @@ Cat ears will be attached forcibly when using with 1.0~3.0 weight.
 
 If -1.0~-3.0, cat ears will never appear.
 
-Training settings: see [configs](./examples/cat_ears_prompts.yaml).
+Training settings: see [configs](./examples/cat_ears_config.yaml).
 
 ![cat ears](./images/cat_ears.jpg)
 
@@ -177,6 +184,44 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 4103955758, Size: 512x512, Mode
 
 </details>
 
+
+- [Unreal](https://huggingface.co/p1atdev/leco/blob/main/unreal_wd15beta3.safetensors) (trained to erase "realistic", "real life", "instagram" on WD1.5 beta3)
+
+Training settings: see [configs](./examples/unreal_config.yaml).
+
+With "real life, instagram":
+
+![unreal](./images/unreal_blue_cat.jpg)
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+real life, instagram, masterpiece, best quality, exceptional, best aesthetic, 1girl, cat ears, blue hair, school uniform, upper body
+Negative prompt: worst quality, low quality, bad aesthetic, oldest, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, jpeg artifacts, signature, watermark, username, blurry
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 757542759, Size: 768x768, Model hash: d38e779546, Model: wd-beta3-base-fp16, Clip skip: 2, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: unreal_6_many_prompts_200steps(fff5917285da), AddNet Weight A 1: -1.0, AddNet Weight B 1: -1.0, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "-1, 0, 1", Version: v1.3.0
+```
+
+</details>
+
+Without "real life, instagram":
+
+![unreal](./images/unreal_yellow_girl.jpg)
+
+<details>
+<summary>
+Generation settings
+</summary>
+
+```yaml
+masterpiece, best quality, exceptional, best aesthetic,, 1girl, aqua eyes, baseball cap, blonde hair, closed mouth, earrings, green background, hat, hoop earrings, jewelry, looking at viewer, shirt, short hair, simple background, solo, upper body, yellow shirt,
+Negative prompt: worst quality, low quality, bad aesthetic, oldest, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, jpeg artifacts, signature, watermark, username, blurry
+Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 2867636749, Size: 768x768, Model hash: d38e779546, Model: wd-beta3-base-fp16, Clip skip: 2, AddNet Enabled: True, AddNet Module 1: LoRA, AddNet Model 1: unreal_6_many_prompts_200steps(fff5917285da), AddNet Weight A 1: -1.0, AddNet Weight B 1: -1.0, Script: X/Y/Z plot, X Type: AddNet Weight 1, X Values: "-1, 0, 1", Version: v1.3.0
+```
+
+</details>
 
 ## References
 

@@ -1,8 +1,8 @@
-from typing import Literal, Optional
+from typing import Literal
 
 import yaml
 
-from pydantic import BaseModel, validator, ValidationError
+from pydantic import BaseModel
 import torch
 
 PRECISION_TYPES = Literal["fp32", "fp16", "bf16", "float32", "float16", "bfloat16"]
@@ -24,11 +24,11 @@ class NetworkConfig(BaseModel):
 class TrainConfig(BaseModel):
     precision: PRECISION_TYPES = "bfloat16"
     noise_scheduler: Literal["ddim", "ddpm", "lms", "euler_a"] = "ddim"
-    resolution: int = 512
 
     iterations: int = 500
-    batch_size: int = 1
     lr: float = 1e-4
+    optimizer: str = "adamw"
+    lr_scheduler: str = "constant"
 
 
 class SaveConfig(BaseModel):

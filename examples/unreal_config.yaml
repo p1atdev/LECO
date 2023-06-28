@@ -1,4 +1,4 @@
-prompts_file: "./cat_ears_prompts.yaml"
+prompts_file: "./unreal_prompts.yaml"
 
 pretrained_model:
   name_or_path: "Birchlabs/wd-1-5-beta3-unofficial"
@@ -13,16 +13,15 @@ network:
 train:
   precision: "bfloat16"
   noise_scheduler: "ddim"
-  iterations: 2000
-  batch_size: 2
+  iterations: 1000
   lr: 1e-4
-  optimizer: "AdamW"
-  lr_scheduler: "constant"
+  optimizer: "lion"
+  lr_scheduler: "cosine"
 
 save:
-  name: "cat_ears"
-  path: "./output/cat_ears_2"
-  per_steps: 200
+  name: "unreal"
+  path: "./output/unreal"
+  per_steps: 100
   precision: "bfloat16"
 
 logging:

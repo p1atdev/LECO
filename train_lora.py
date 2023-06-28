@@ -45,9 +45,11 @@ def train(
     if config.network.type == "c3lier":
         modules += UNET_TARGET_REPLACE_MODULE_CONV
 
+    if config.logging.verbose:
+        print(metadata)
+
     if config.logging.use_wandb:
-        wandb.init(project=f"LECO_{config.save.name}")
-        wandb.config = metadata
+        wandb.init(project=f"LECO_{config.save.name}", config=metadata)
 
     weight_dtype = config_util.parse_precision(config.train.precision)
     save_weight_dtype = config_util.parse_precision(config.train.precision)
@@ -71,8 +73,13 @@ def train(
         unet, rank=config.network.rank, multiplier=1.0, alpha=config.network.alpha
     ).to(DEVICE_CUDA, dtype=weight_dtype)
 
-    optimizer = torch.optim.AdamW(
-        network.prepare_optimizer_params(), lr=config.train.lr
+    optimizer_module = train_util.get_optimizer(config.train.optimizer)
+    optimizer = optimizer_module(network.prepare_optimizer_params(), lr=config.train.lr)
+    lr_scheduler = train_util.get_lr_scheduler(
+        config.train.lr_scheduler,
+        optimizer,
+        max_iterations=config.train.iterations,
+        lr_min=config.train.lr / 10,
     )
     criteria = torch.nn.MSELoss()
 
@@ -89,6 +96,7 @@ def train(
 
     with torch.no_grad():
         for settings in prompts:
+            print(settings)
             for prompt in [
                 settings.target,
                 settings.positive,
@@ -108,6 +116,8 @@ def train(
                     cache[settings.unconditional],
                     cache[settings.neutral],
                     settings.guidance_scale,
+                    settings.resolution,
+                    settings.batch_size,
                     settings.action,
                 )
             )
@@ -119,8 +129,6 @@ def train(
 
     pbar = tqdm(range(config.train.iterations))
 
-    n_imgs = config.train.batch_size
-
     for i in pbar:
         with torch.no_grad():
             scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
@@ -131,11 +139,16 @@ def train(
                 torch.randint(0, len(prompt_pairs), (1,)).item()
             ]
 
+            if config.logging.verbose:
+                print("gudance_scale:", prompt_pair.guidance_scale)
+                print("resolution:", prompt_pair.resolution)
+                print("batch_size:", prompt_pair.batch_size)
+
             # 1 ~ 49 からランダム
             timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
 
             latents = train_util.get_initial_latents(
-                scheduler, n_imgs, config.train.resolution, 1
+                scheduler, prompt_pair.batch_size, prompt_pair.resolution, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
             with network:
@@ -145,7 +158,9 @@ def train(
                     scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
                     train_util.concat_embeddings(
-                        prompt_pair.unconditional, prompt_pair.positive, n_imgs
+                        prompt_pair.unconditional,
+                        prompt_pair.target,
+                        prompt_pair.batch_size,
                     ),
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
@@ -165,7 +180,9 @@ def train(
                 current_timestep,
                 denoised_latents,
                 train_util.concat_embeddings(
-                    prompt_pair.unconditional, prompt_pair.positive, n_imgs
+                    prompt_pair.unconditional,
+                    prompt_pair.positive,
+                    prompt_pair.batch_size,
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
@@ -175,7 +192,9 @@ def train(
                 current_timestep,
                 denoised_latents,
                 train_util.concat_embeddings(
-                    prompt_pair.unconditional, prompt_pair.neutral, n_imgs
+                    prompt_pair.unconditional,
+                    prompt_pair.neutral,
+                    prompt_pair.batch_size,
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
@@ -185,7 +204,9 @@ def train(
                 current_timestep,
                 denoised_latents,
                 train_util.concat_embeddings(
-                    prompt_pair.unconditional, prompt_pair.unconditional, n_imgs
+                    prompt_pair.unconditional,
+                    prompt_pair.unconditional,
+                    prompt_pair.batch_size,
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
@@ -202,7 +223,9 @@ def train(
                 current_timestep,
                 denoised_latents,
                 train_util.concat_embeddings(
-                    prompt_pair.unconditional, prompt_pair.target, n_imgs
+                    prompt_pair.unconditional,
+                    prompt_pair.target,
+                    prompt_pair.batch_size,
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
@@ -224,10 +247,13 @@ def train(
         # 1000倍しないとずっと0.000...になってしまって見た目的に面白くない
         pbar.set_description(f"Loss*1k: {loss.item()*1000:.4f}")
         if config.logging.use_wandb:
-            wandb.log({"loss": loss, "iteration": i})
+            wandb.log(
+                {"loss": loss, "iteration": i, "lr": lr_scheduler.get_last_lr()[0]}
+            )
 
         loss.backward()
         optimizer.step()
+        lr_scheduler.step()
 
         del (
             positive_latents,

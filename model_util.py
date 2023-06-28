@@ -1,7 +1,7 @@
 from typing import Literal
 
 from transformers import CLIPTextModel, CLIPTokenizer
-from diffusers import UNet2DConditionModel, SchedulerMixin
+from diffusers import UNet2DConditionModel, SchedulerMixin, StableDiffusionPipeline
 from diffusers.schedulers import (
     DDIMScheduler,
     DDPMScheduler,
@@ -16,12 +16,10 @@ TOKENIZER_V2_MODEL_NAME = "stabilityai/stable-diffusion-2-1"
 AVAILABLE_SCHEDULERS = Literal["ddim", "ddpm", "lms", "euler_a"]
 
 
-def load_models(
+def load_diffusers_model(
     pretrained_model_name_or_path: str,
-    scheduler_name: AVAILABLE_SCHEDULERS,
     v2: bool = False,
-    v_pred: bool = False,
-) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel, SchedulerMixin]:
+) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel]:
     # VAE はいらない
 
     if v2:
@@ -38,8 +36,48 @@ def load_models(
     )
 
     unet = UNet2DConditionModel.from_pretrained(
-        pretrained_model_name_or_path, subfolder="unet"
+        pretrained_model_name_or_path,
+        subfolder="unet",
     )
+
+    return tokenizer, text_encoder, unet
+
+
+def load_checkpoint_model(
+    checkpoint_path: str,
+    v2: bool = False,
+) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel]:
+    pipe = StableDiffusionPipeline.from_ckpt(
+        checkpoint_path, upcast_attention=True if v2 else False
+    )
+
+    unet = pipe.unet
+    text_encoder = pipe.text_encoder
+    tokenizer = pipe.tokenizer
+
+    del pipe
+
+    return tokenizer, text_encoder, unet
+
+
+def load_models(
+    pretrained_model_name_or_path: str,
+    scheduler_name: AVAILABLE_SCHEDULERS,
+    v2: bool = False,
+    v_pred: bool = False,
+) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel, SchedulerMixin]:
+    if pretrained_model_name_or_path.endswith(
+        ".ckpt"
+    ) or pretrained_model_name_or_path.endswith(".safetensors"):
+        tokenizer, text_encoder, unet = load_checkpoint_model(
+            pretrained_model_name_or_path, v2=v2
+        )
+    else:  # diffusers
+        tokenizer, text_encoder, unet = load_diffusers_model(
+            pretrained_model_name_or_path, v2=v2
+        )
+
+    # VAE はいらない
 
     scheduler = create_noise_scheduler(
         scheduler_name,

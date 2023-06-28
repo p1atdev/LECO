@@ -5,3 +5,5 @@ scipy
 safetensors
 pyyaml
 pydantic
+dadaptation
+lion-pytorch
