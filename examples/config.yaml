@@ -1,7 +1,7 @@
 prompts_file: "./prompts.yaml"
 
 pretrained_model:
-  name_or_path: "stabilityai/stable-diffusion-2-1" # currently diffusers models only
+  name_or_path: "stabilityai/stable-diffusion-2-1" # you can also use .ckpt or .safetensors models
   v2: true # true if model is v2.x
   v_pred: true # true if model uses v-prediction
 
