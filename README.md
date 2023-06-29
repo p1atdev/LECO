@@ -1,5 +1,7 @@
 # LECO ✏️ 
 
+<a href="https://colab.research.google.com/github/p1atdev/LECO/blob/dev/train.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+
 Low-rank adaptation for Erasing COncepts from diffusion models.  
 
 The original repository: [Erasing Concepts from Diffusion Models](https://github.com/rohitgandikota/erasing/tree/main)
