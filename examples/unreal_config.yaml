@@ -1,4 +1,4 @@
-prompts_file: "./unreal_prompts.yaml"
+prompts_file: "./examples/unreal_prompts.yaml"
 
 pretrained_model:
   name_or_path: "Birchlabs/wd-1-5-beta3-unofficial"
