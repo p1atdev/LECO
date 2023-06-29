@@ -79,7 +79,7 @@ def train(
         config.train.lr_scheduler,
         optimizer,
         max_iterations=config.train.iterations,
-        lr_min=config.train.lr / 10,
+        lr_min=config.train.lr / 100,
     )
     criteria = torch.nn.MSELoss()
 

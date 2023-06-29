@@ -13,12 +13,7 @@ from safetensors.torch import save_file
 
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    # "CrossAttnUpBlock2D",
-    # "UNetMidBlock2DCrossAttn",
-    # "CrossAttnDownBlock2D",
-    # "Transformer2DModel",
     "Attention",  # attn1, 2
-    # "GEGLU",
 ]
 UNET_TARGET_REPLACE_MODULE_CONV = [
     "ResnetBlock2D",
