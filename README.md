@@ -74,6 +74,7 @@ other:
   action: "erase" # erase or enhance
   guidance_scale: 1.0
   resolution: 512
+  bucketing: false
   batch_size: 2
 ```
 
