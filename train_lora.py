@@ -117,6 +117,7 @@ def train(
                     cache[settings.neutral],
                     settings.guidance_scale,
                     settings.resolution,
+                    settings.bucketing,
                     settings.batch_size,
                     settings.action,
                 )
@@ -139,16 +140,25 @@ def train(
                 torch.randint(0, len(prompt_pairs), (1,)).item()
             ]
 
-            if config.logging.verbose:
-                print("gudance_scale:", prompt_pair.guidance_scale)
-                print("resolution:", prompt_pair.resolution)
-                print("batch_size:", prompt_pair.batch_size)
-
             # 1 ~ 49 からランダム
             timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
 
+            height, width = prompt_pair.resolution, prompt_pair.resolution
+            if prompt_pair.bucketing:
+                height, width = train_util.get_random_resolution_in_bucket(
+                    prompt_pair.resolution
+                )
+
+            if config.logging.verbose:
+                print("gudance_scale:", prompt_pair.guidance_scale)
+                print("resolution:", prompt_pair.resolution)
+                print("bucketing:", prompt_pair.bucketing)
+                if prompt_pair.bucketing:
+                    print("bucketed resolution:", (height, width))
+                print("batch_size:", prompt_pair.batch_size)
+
             latents = train_util.get_initial_latents(
-                scheduler, prompt_pair.batch_size, prompt_pair.resolution, 1
+                scheduler, prompt_pair.batch_size, height, width, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
             with network:
