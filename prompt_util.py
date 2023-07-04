@@ -31,7 +31,7 @@ class PromptSettings(BaseModel):
     action: ACTION_TYPES = "erase"  # default is "erase"
     guidance_scale: float = 1.0  # default is 1.0
     resolution: int = 512  # default is 512
-    bucketing: bool = False  # default is False
+    dynamic_resolution: bool = False  # default is False
     batch_size: int = 1  # default is 1
 
     @root_validator(pre=True)
@@ -57,7 +57,7 @@ class PromptPair:
 
     guidance_scale: float
     resolution: int
-    bucketing: bool
+    dynamic_resolution: bool
     batch_size: int
 
     loss_fn: torch.nn.Module
@@ -72,7 +72,7 @@ class PromptPair:
         neutral: torch.FloatTensor,
         guidance_scale: float,
         resolution: int,
-        bucketing: bool,
+        dynamic_resolution: bool,
         batch_size: int,
         action: ACTION_TYPES,
     ) -> None:
@@ -83,7 +83,7 @@ class PromptPair:
         self.neutral = neutral
         self.guidance_scale = guidance_scale
         self.resolution = resolution
-        self.bucketing = bucketing
+        self.dynamic_resolution = dynamic_resolution
         self.batch_size = batch_size
         self.action = action
 

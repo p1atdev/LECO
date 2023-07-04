@@ -23,7 +23,7 @@ from config_util import RootConfig
 import wandb
 
 DEVICE_CUDA = torch.device("cuda:0")
-DDIM_STEPS = 50
+# DDIM_STEPS = 50
 
 
 def flush():
@@ -117,7 +117,7 @@ def train(
                     cache[settings.neutral],
                     settings.guidance_scale,
                     settings.resolution,
-                    settings.bucketing,
+                    settings.dynamic_resolution,
                     settings.batch_size,
                     settings.action,
                 )
@@ -132,7 +132,9 @@ def train(
 
     for i in pbar:
         with torch.no_grad():
-            scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
+            scheduler.set_timesteps(
+                config.train.max_denoising_steps, device=DEVICE_CUDA
+            )
 
             optimizer.zero_grad()
 
@@ -141,10 +143,12 @@ def train(
             ]
 
             # 1 ~ 49 からランダム
-            timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
+            timesteps_to = torch.randint(
+                1, config.train.max_denoising_steps, (1,)
+            ).item()
 
             height, width = prompt_pair.resolution, prompt_pair.resolution
-            if prompt_pair.bucketing:
+            if prompt_pair.dynamic_resolution:
                 height, width = train_util.get_random_resolution_in_bucket(
                     prompt_pair.resolution
                 )
@@ -152,8 +156,8 @@ def train(
             if config.logging.verbose:
                 print("gudance_scale:", prompt_pair.guidance_scale)
                 print("resolution:", prompt_pair.resolution)
-                print("bucketing:", prompt_pair.bucketing)
-                if prompt_pair.bucketing:
+                print("dynamic_resolution:", prompt_pair.dynamic_resolution)
+                if prompt_pair.dynamic_resolution:
                     print("bucketed resolution:", (height, width))
                 print("batch_size:", prompt_pair.batch_size)
 
@@ -180,7 +184,7 @@ def train(
             scheduler.set_timesteps(1000)
 
             current_timestep = scheduler.timesteps[
-                int(timesteps_to * 1000 / DDIM_STEPS)
+                int(timesteps_to * 1000 / config.train.max_denoising_steps)
             ]
 
             # with network: の外では空のLoRAのみが有効になる
