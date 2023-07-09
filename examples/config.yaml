@@ -9,6 +9,7 @@ network:
   type: "lierla" # or "c3lier"
   rank: 4
   alpha: 1.0
+  training_method: "full" # selfattn, xattn, noxattn, or innoxattn
 
 train:
   precision: "bfloat16"
