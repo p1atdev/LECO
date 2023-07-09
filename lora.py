@@ -4,7 +4,7 @@
 
 import os
 import math
-from typing import Optional, List, Type, Set
+from typing import Optional, List, Type, Set, Literal
 
 import torch
 import torch.nn as nn
@@ -24,6 +24,21 @@ UNET_TARGET_REPLACE_MODULE_CONV = [
 LORA_PREFIX_UNET = "lora_unet"
 
 DEFAULT_TARGET_REPLACE = UNET_TARGET_REPLACE_MODULE_TRANSFORMER
+
+TRAINING_METHODS = Literal[
+    "noxattn",  # train all layers except x-attns and time_embed layers
+    "innoxattn",  # train all layers except self attention layers
+    "selfattn",  # ESD-u, train only self attention layers
+    "xattn",  # ESD-x, train only x attention layers
+    "full",  #  train all layers
+    # "notime",
+    # "xlayer",
+    # "outxattn",
+    # "outsattn",
+    # "inxattn",
+    # "inmidsattn",
+    # "selflayer",
+]
 
 
 class LoRAModule(nn.Module):
@@ -98,10 +113,10 @@ class LoRANetwork(nn.Module):
         rank: int = 4,
         multiplier: float = 1.0,
         alpha: float = 1.0,
+        train_method: TRAINING_METHODS = "full",
     ) -> None:
         super().__init__()
 
-        # model = diffuser
         self.multiplier = multiplier
         self.lora_dim = rank
         self.alpha = alpha
@@ -116,7 +131,7 @@ class LoRANetwork(nn.Module):
             DEFAULT_TARGET_REPLACE,
             self.lora_dim,
             self.multiplier,
-            train=True,
+            train_method=train_method,
         )
         print(f"create LoRA for U-Net: {len(self.unet_loras)} modules.")
 
@@ -147,11 +162,29 @@ class LoRANetwork(nn.Module):
         target_replace_modules: List[str],
         rank: int,
         multiplier: float,
-        train: bool = True,
+        train_method: TRAINING_METHODS,
     ) -> list:
         loras = []
 
         for name, module in root_module.named_modules():
+            if train_method == "noxattn":  # Cross Attention と Time Embed 以外学習
+                if "attn2" in name or "time_embed" in name:
+                    continue
+            elif train_method == "innoxattn":  # Cross Attention 以外学習
+                if "attn2" in name:
+                    continue
+            elif train_method == "selfattn":  # Self Attention のみ学習
+                if "attn1" not in name:
+                    continue
+            elif train_method == "xattn":  # Cross Attention のみ学習
+                if "attn2" not in name:
+                    continue
+            elif train_method == "full":  # 全部学習
+                pass
+            else:
+                raise NotImplementedError(
+                    f"train_method: {train_method} is not implemented."
+                )
             if module.__class__.__name__ in target_replace_modules:
                 for child_name, child_module in module.named_modules():
                     if child_module.__class__.__name__ in ["Linear", "Conv2d"]:
@@ -161,9 +194,6 @@ class LoRANetwork(nn.Module):
                         lora = self.module(
                             lora_name, child_module, multiplier, rank, self.alpha
                         )
-                        if not train:
-                            lora.requires_grad_(False)
-                            lora.eval()
                         loras.append(lora)
 
         return loras

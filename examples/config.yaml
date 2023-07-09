@@ -9,6 +9,7 @@ network:
   type: "lierla" # or "c3lier"
   rank: 4
   alpha: 1.0
+  training_method: "full" # selfattn, xattn, noxattn, or innoxattn
 
 train:
   precision: "bfloat16"
@@ -17,6 +18,7 @@ train:
   lr: 1e-4
   optimizer: "AdamW"
   lr_scheduler: "constant"
+  max_denoising_steps: 50
 
 save:
   name: "van_gogh"

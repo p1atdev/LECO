@@ -23,7 +23,6 @@ from config_util import RootConfig
 import wandb
 
 DEVICE_CUDA = torch.device("cuda:0")
-DDIM_STEPS = 50
 
 
 def flush():
@@ -70,7 +69,11 @@ def train(
     unet.eval()
 
     network = LoRANetwork(
-        unet, rank=config.network.rank, multiplier=1.0, alpha=config.network.alpha
+        unet,
+        rank=config.network.rank,
+        multiplier=1.0,
+        alpha=config.network.alpha,
+        train_method=config.network.training_method,
     ).to(DEVICE_CUDA, dtype=weight_dtype)
 
     optimizer_module = train_util.get_optimizer(config.train.optimizer)
@@ -117,6 +120,7 @@ def train(
                     cache[settings.neutral],
                     settings.guidance_scale,
                     settings.resolution,
+                    settings.dynamic_resolution,
                     settings.batch_size,
                     settings.action,
                 )
@@ -131,7 +135,9 @@ def train(
 
     for i in pbar:
         with torch.no_grad():
-            scheduler.set_timesteps(DDIM_STEPS, device=DEVICE_CUDA)
+            scheduler.set_timesteps(
+                config.train.max_denoising_steps, device=DEVICE_CUDA
+            )
 
             optimizer.zero_grad()
 
@@ -139,16 +145,27 @@ def train(
                 torch.randint(0, len(prompt_pairs), (1,)).item()
             ]
 
+            # 1 ~ 49 からランダム
+            timesteps_to = torch.randint(
+                1, config.train.max_denoising_steps, (1,)
+            ).item()
+
+            height, width = prompt_pair.resolution, prompt_pair.resolution
+            if prompt_pair.dynamic_resolution:
+                height, width = train_util.get_random_resolution_in_bucket(
+                    prompt_pair.resolution
+                )
+
             if config.logging.verbose:
                 print("gudance_scale:", prompt_pair.guidance_scale)
                 print("resolution:", prompt_pair.resolution)
+                print("dynamic_resolution:", prompt_pair.dynamic_resolution)
+                if prompt_pair.dynamic_resolution:
+                    print("bucketed resolution:", (height, width))
                 print("batch_size:", prompt_pair.batch_size)
 
-            # 1 ~ 49 からランダム
-            timesteps_to = torch.randint(1, DDIM_STEPS, (1,)).item()
-
             latents = train_util.get_initial_latents(
-                scheduler, prompt_pair.batch_size, prompt_pair.resolution, 1
+                scheduler, prompt_pair.batch_size, height, width, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
             with network:
@@ -170,7 +187,7 @@ def train(
             scheduler.set_timesteps(1000)
 
             current_timestep = scheduler.timesteps[
-                int(timesteps_to * 1000 / DDIM_STEPS)
+                int(timesteps_to * 1000 / config.train.max_denoising_steps)
             ]
 
             # with network: の外では空のLoRAのみが有効になる

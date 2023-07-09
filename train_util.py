@@ -13,14 +13,14 @@ UNET_IN_CHANNELS = 4  # Stable Diffusion の in_channels は 4 で固定
 
 
 def get_random_noise(
-    batch_size: int, img_size: int, generator: torch.Generator = None
+    batch_size: int, height: int, width: int, generator: torch.Generator = None
 ) -> torch.Tensor:
     return torch.randn(
         (
             batch_size,
             UNET_IN_CHANNELS,
-            img_size // 8,
-            img_size // 8,
+            height // 8,  # 縦と横これであってるのかわからないけど、どっちにしろ大きな問題は発生しないのでこれでいいや
+            width // 8,
         ),
         generator=generator,
     )
@@ -29,11 +29,12 @@ def get_random_noise(
 def get_initial_latents(
     scheduler: SchedulerMixin,
     n_imgs: int,
-    img_size: int,
+    height: int,
+    width: int,
     n_prompts: int,
     generator=None,
 ) -> torch.Tensor:
-    noise = get_random_noise(n_imgs, img_size, generator=generator).repeat(
+    noise = get_random_noise(n_imgs, height, width, generator=generator).repeat(
         n_prompts, 1, 1, 1
     )
 
@@ -197,19 +198,36 @@ def get_lr_scheduler(
         return torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=max_iterations, eta_min=lr_min, **kwargs
         )
-    # elif name == "cosine_restarts":
-    #     return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-    #         optimizer, eta_min=lr_min, **kwargs
-    #     )
+    elif name == "cosine_with_restarts":
+        return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=max_iterations // 10, T_mult=2, eta_min=lr_min, **kwargs
+        )
     elif name == "step":
         return torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=max_iterations / 100, gamma=0.999, **kwargs
+            optimizer, step_size=max_iterations // 100, gamma=0.999, **kwargs
         )
     elif name == "constant":
         return torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1, **kwargs)
     elif name == "linear":
         return torch.optim.lr_scheduler.LinearLR(
-            optimizer, factor=0.5, total_iters=max_iterations / 100, **kwargs
+            optimizer, factor=0.5, total_iters=max_iterations // 100, **kwargs
         )
     else:
-        raise ValueError("Scheduler must be cosine, step, linear or constant")
+        raise ValueError(
+            "Scheduler must be cosine, cosine_with_restarts, step, linear or constant"
+        )
+
+
+def get_random_resolution_in_bucket(bucket_resolution: int = 512) -> tuple[int, int]:
+    max_resolution = bucket_resolution
+    min_resolution = bucket_resolution // 2
+
+    step = 64
+
+    min_step = min_resolution // step
+    max_step = max_resolution // step
+
+    height = torch.randint(min_step, max_step, (1,)).item() * step
+    width = torch.randint(min_step, max_step, (1,)).item() * step
+
+    return height, width
