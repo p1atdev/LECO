@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 import yaml
 from pathlib import Path
@@ -9,14 +9,16 @@ import torch
 
 ACTION_TYPES = Literal["erase", "enhance"]
 
+PROMPT_EMBEDDING = Union[torch.FloatTensor, tuple[torch.FloatTensor, torch.FloatTensor]]
+
 
 class PromptCache:
-    prompts: dict[str, torch.FloatTensor] = {}
+    prompts: dict[str, PROMPT_EMBEDDING] = {}
 
-    def __setitem__(self, __name: str, __value: torch.FloatTensor) -> None:
+    def __setitem__(self, __name: str, __value: PROMPT_EMBEDDING) -> None:
         self.prompts[__name] = __value
 
-    def __getitem__(self, __name: str) -> Optional[torch.FloatTensor]:
+    def __getitem__(self, __name: str) -> Optional[PROMPT_EMBEDDING]:
         if __name in self.prompts:
             return self.prompts[__name]
         else:

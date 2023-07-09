@@ -13,7 +13,7 @@ from safetensors.torch import save_file
 
 
 UNET_TARGET_REPLACE_MODULE_TRANSFORMER = [
-    "Attention",  # attn1, 2
+    "Transformer2DModel",  # どうやらこっちの方らしい？ # attn1, 2
 ]
 UNET_TARGET_REPLACE_MODULE_CONV = [
     "ResnetBlock2D",
