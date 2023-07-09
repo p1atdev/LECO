@@ -1,9 +1,11 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import yaml
 
 from pydantic import BaseModel
 import torch
+
+from lora import TRAINING_METHODS
 
 PRECISION_TYPES = Literal["fp32", "fp16", "bf16", "float32", "float16", "bfloat16"]
 NETWORK_TYPES = Literal["lierla", "c3lier"]
@@ -19,6 +21,8 @@ class NetworkConfig(BaseModel):
     type: NETWORK_TYPES = "lierla"
     rank: int = 4
     alpha: float = 1.0
+
+    training_method: TRAINING_METHODS = "full"
 
 
 class TrainConfig(BaseModel):
@@ -56,13 +60,13 @@ class RootConfig(BaseModel):
 
     network: NetworkConfig
 
-    train: TrainConfig
+    train: Optional[TrainConfig]
 
-    save: SaveConfig
+    save: Optional[SaveConfig]
 
-    logging: LoggingConfig
+    logging: Optional[LoggingConfig]
 
-    other: OtherConfig
+    other: Optional[OtherConfig]
 
 
 def parse_precision(precision: str) -> torch.dtype:
@@ -81,6 +85,7 @@ def load_config_from_yaml(config_path: str) -> RootConfig:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     root = RootConfig(**config)
+
     if root.train is None:
         root.train = TrainConfig()
 

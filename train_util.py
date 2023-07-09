@@ -198,22 +198,24 @@ def get_lr_scheduler(
         return torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=max_iterations, eta_min=lr_min, **kwargs
         )
-    # elif name == "cosine_restarts":
-    #     return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-    #         optimizer, eta_min=lr_min, **kwargs
-    #     )
+    elif name == "cosine_with_restarts":
+        return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, T_0=max_iterations // 10, T_mult=2, eta_min=lr_min, **kwargs
+        )
     elif name == "step":
         return torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=max_iterations / 100, gamma=0.999, **kwargs
+            optimizer, step_size=max_iterations // 100, gamma=0.999, **kwargs
         )
     elif name == "constant":
         return torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1, **kwargs)
     elif name == "linear":
         return torch.optim.lr_scheduler.LinearLR(
-            optimizer, factor=0.5, total_iters=max_iterations / 100, **kwargs
+            optimizer, factor=0.5, total_iters=max_iterations // 100, **kwargs
         )
     else:
-        raise ValueError("Scheduler must be cosine, step, linear or constant")
+        raise ValueError(
+            "Scheduler must be cosine, cosine_with_restarts, step, linear or constant"
+        )
 
 
 def get_random_resolution_in_bucket(bucket_resolution: int = 512) -> tuple[int, int]:

@@ -23,7 +23,6 @@ from config_util import RootConfig
 import wandb
 
 DEVICE_CUDA = torch.device("cuda:0")
-# DDIM_STEPS = 50
 
 
 def flush():
@@ -70,7 +69,11 @@ def train(
     unet.eval()
 
     network = LoRANetwork(
-        unet, rank=config.network.rank, multiplier=1.0, alpha=config.network.alpha
+        unet,
+        rank=config.network.rank,
+        multiplier=1.0,
+        alpha=config.network.alpha,
+        train_method=config.network.training_method,
     ).to(DEVICE_CUDA, dtype=weight_dtype)
 
     optimizer_module = train_util.get_optimizer(config.train.optimizer)
