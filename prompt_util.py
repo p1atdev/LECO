@@ -35,6 +35,7 @@ class PromptSettings(BaseModel):
     resolution: int = 512  # default is 512
     dynamic_resolution: bool = False  # default is False
     batch_size: int = 1  # default is 1
+    dynamic_crops: bool = False  # default is False. only used when model is XL
 
     @root_validator(pre=True)
     def fill_prompts(cls, values):
@@ -61,6 +62,7 @@ class PromptPair:
     resolution: int
     dynamic_resolution: bool
     batch_size: int
+    dynamic_crops: bool
 
     loss_fn: torch.nn.Module
     action: ACTION_TYPES
@@ -72,22 +74,20 @@ class PromptPair:
         positive: torch.FloatTensor,
         unconditional: torch.FloatTensor,
         neutral: torch.FloatTensor,
-        guidance_scale: float,
-        resolution: int,
-        dynamic_resolution: bool,
-        batch_size: int,
-        action: ACTION_TYPES,
+        settings: PromptSettings,
     ) -> None:
         self.loss_fn = loss_fn
         self.target = target
         self.positive = positive
         self.unconditional = unconditional
         self.neutral = neutral
-        self.guidance_scale = guidance_scale
-        self.resolution = resolution
-        self.dynamic_resolution = dynamic_resolution
-        self.batch_size = batch_size
-        self.action = action
+
+        self.guidance_scale = settings.guidance_scale
+        self.resolution = settings.resolution
+        self.dynamic_resolution = settings.dynamic_resolution
+        self.batch_size = settings.batch_size
+        self.dynamic_crops = settings.dynamic_crops
+        self.action = settings.action
 
     def _erase(
         self,
