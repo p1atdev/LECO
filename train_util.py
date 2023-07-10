@@ -205,7 +205,6 @@ def predict_noise_xl(
         latent_model_input,
         timestep,
         encoder_hidden_states=text_embeddings,
-        add_text_embeddings=add_text_embeddings,
         added_cond_kwargs=added_cond_kwargs,
     ).sample
 
