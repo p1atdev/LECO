@@ -252,16 +252,34 @@ def diffusion_xl(
 
 
 # for XL
-def get_add_time_ids(height: int, width: int, dtype: torch.dtype):
-    original_size = (height, width)
-    crops_coords_top_left = (0, 0)
-    target_size = (height, width)
+def get_add_time_ids(
+    height: int,
+    width: int,
+    dynamic_crops: bool = False,
+    dtype: torch.dtype = torch.float32,
+):
+    if dynamic_crops:
+        # random float scale between 1 and 3
+        random_scale = torch.rand(1).item() * 2 + 1
+        original_size = (int(height * random_scale), int(width * random_scale))
+        # random position
+        crops_coords_top_left = (
+            torch.randint(0, original_size[0] - height, (1,)).item(),
+            torch.randint(0, original_size[1] - width, (1,)).item(),
+        )
+        target_size = (height, width)
+    else:
+        original_size = (height, width)
+        crops_coords_top_left = (0, 0)
+        target_size = (height, width)
 
+    # this is expected as 6
     add_time_ids = list(original_size + crops_coords_top_left + target_size)
 
+    # this is expected as 2816
     passed_add_embed_dim = (
-        UNET_ATTENTION_TIME_EMBED_DIM * len(add_time_ids)
-        + TEXT_ENCODER_2_PROJECTION_DIM
+        UNET_ATTENTION_TIME_EMBED_DIM * len(add_time_ids)  # 256 * 6
+        + TEXT_ENCODER_2_PROJECTION_DIM  # + 1280
     )
     if passed_add_embed_dim != UNET_PROJECTION_CLASS_EMBEDDING_INPUT_DIM:
         raise ValueError(
