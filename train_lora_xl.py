@@ -175,7 +175,7 @@ def train(
             add_time_ids = train_util.get_add_time_ids(
                 height,
                 width,
-                dynamic_crops=prompt_pair.settings.dynamic_crops,
+                dynamic_crops=prompt_pair.dynamic_crops,
                 dtype=weight_dtype,
             )
 
