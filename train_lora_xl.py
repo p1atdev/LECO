@@ -177,7 +177,7 @@ def train(
                 width,
                 dynamic_crops=prompt_pair.dynamic_crops,
                 dtype=weight_dtype,
-            )
+            ).to(DEVICE_CUDA, dtype=weight_dtype)
 
             with network:
                 # ちょっとデノイズされれたものが返る
