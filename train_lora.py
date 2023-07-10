@@ -118,11 +118,7 @@ def train(
                     cache[settings.positive],
                     cache[settings.unconditional],
                     cache[settings.neutral],
-                    settings.guidance_scale,
-                    settings.resolution,
-                    settings.dynamic_resolution,
-                    settings.batch_size,
-                    settings.action,
+                    settings,
                 )
             )
 
@@ -150,7 +146,10 @@ def train(
                 1, config.train.max_denoising_steps, (1,)
             ).item()
 
-            height, width = prompt_pair.resolution, prompt_pair.resolution
+            height, width = (
+                prompt_pair.resolution,
+                prompt_pair.resolution,
+            )
             if prompt_pair.dynamic_resolution:
                 height, width = train_util.get_random_resolution_in_bucket(
                     prompt_pair.resolution

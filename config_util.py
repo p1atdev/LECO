@@ -16,6 +16,8 @@ class PretrainedModelConfig(BaseModel):
     v2: bool = False
     v_pred: bool = False
 
+    clip_skip: Optional[int] = None
+
 
 class NetworkConfig(BaseModel):
     type: NETWORK_TYPES = "lierla"

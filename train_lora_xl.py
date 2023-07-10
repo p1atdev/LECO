@@ -124,11 +124,7 @@ def train(
                     cache[settings.positive],
                     cache[settings.unconditional],
                     cache[settings.neutral],
-                    settings.guidance_scale,
-                    settings.resolution,
-                    settings.dynamic_resolution,
-                    settings.batch_size,
-                    settings.action,
+                    settings,
                 )
             )
 
@@ -176,7 +172,12 @@ def train(
                 scheduler, prompt_pair.batch_size, height, width, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
-            add_time_ids = train_util.get_time_ids(height, width, weight_dtype)
+            add_time_ids = train_util.get_add_time_ids(
+                height,
+                width,
+                dynamic_crops=prompt_pair.settings.dynamic_crops,
+                dtype=weight_dtype,
+            )
 
             with network:
                 # ちょっとデノイズされれたものが返る

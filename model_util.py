@@ -1,4 +1,4 @@
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 
 import torch
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPTextModelWithProjection
@@ -23,33 +23,52 @@ AVAILABLE_SCHEDULERS = Literal["ddim", "ddpm", "lms", "euler_a"]
 
 SDXL_TEXT_ENCODER_TYPE = Union[CLIPTextModel, CLIPTextModelWithProjection]
 
+DIFFUSERS_CACHE_DIR = None  # if you want to change the cache dir, change this
+
 
 def load_diffusers_model(
     pretrained_model_name_or_path: str,
     v2: bool = False,
+    clip_skip: Optional[int] = None,
     weight_dtype: torch.dtype = torch.float32,
 ) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel,]:
     # VAE はいらない
 
     if v2:
         tokenizer = CLIPTokenizer.from_pretrained(
-            TOKENIZER_V2_MODEL_NAME, subfolder="tokenizer", torch_dtype=weight_dtype
+            TOKENIZER_V2_MODEL_NAME,
+            subfolder="tokenizer",
+            torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
+        )
+        text_encoder = CLIPTextModel.from_pretrained(
+            pretrained_model_name_or_path,
+            subfolder="text_encoder",
+            # default is clip skip 2
+            num_hidden_layers=24 - (clip_skip - 1) if clip_skip is not None else 23,
+            torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
         )
     else:
         tokenizer = CLIPTokenizer.from_pretrained(
-            TOKENIZER_V1_MODEL_NAME, subfolder="tokenizer", torch_dtype=weight_dtype
+            TOKENIZER_V1_MODEL_NAME,
+            subfolder="tokenizer",
+            torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
         )
-
-    text_encoder = CLIPTextModel.from_pretrained(
-        pretrained_model_name_or_path,
-        subfolder="text_encoder",
-        torch_dtype=weight_dtype,
-    )
+        text_encoder = CLIPTextModel.from_pretrained(
+            pretrained_model_name_or_path,
+            subfolder="text_encoder",
+            num_hidden_layers=12 - (clip_skip - 1) if clip_skip is not None else 12,
+            torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
+        )
 
     unet = UNet2DConditionModel.from_pretrained(
         pretrained_model_name_or_path,
         subfolder="unet",
         torch_dtype=weight_dtype,
+        cache_dir=DIFFUSERS_CACHE_DIR,
     )
 
     return tokenizer, text_encoder, unet
@@ -58,17 +77,24 @@ def load_diffusers_model(
 def load_checkpoint_model(
     checkpoint_path: str,
     v2: bool = False,
+    clip_skip: Optional[int] = None,
     weight_dtype: torch.dtype = torch.float32,
 ) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel,]:
     pipe = StableDiffusionPipeline.from_ckpt(
         checkpoint_path,
         upcast_attention=True if v2 else False,
         torch_dtype=weight_dtype,
+        cache_dir=DIFFUSERS_CACHE_DIR,
     )
 
     unet = pipe.unet
     tokenizer = pipe.tokenizer
     text_encoder = pipe.text_encoder
+    if clip_skip is not None:
+        if v2:
+            text_encoder.config.num_hidden_layers = 24 - (clip_skip - 1)
+        else:
+            text_encoder.config.num_hidden_layers = 12 - (clip_skip - 1)
 
     del pipe
 
@@ -114,11 +140,13 @@ def load_diffusers_model_xl(
             pretrained_model_name_or_path,
             subfolder="tokenizer",
             torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
         ),
         CLIPTokenizer.from_pretrained(
             pretrained_model_name_or_path,
             subfolder="tokenizer_2",
             torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
         ),
     ]
 
@@ -127,11 +155,13 @@ def load_diffusers_model_xl(
             pretrained_model_name_or_path,
             subfolder="text_encoder",
             torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
         ),
         CLIPTextModelWithProjection.from_pretrained(
             pretrained_model_name_or_path,
             subfolder="text_encoder_2",
             torch_dtype=weight_dtype,
+            cache_dir=DIFFUSERS_CACHE_DIR,
         ),
     ]
 
@@ -139,6 +169,7 @@ def load_diffusers_model_xl(
         pretrained_model_name_or_path,
         subfolder="unet",
         torch_dtype=weight_dtype,
+        cache_dir=DIFFUSERS_CACHE_DIR,
     )
 
     return tokenizers, text_encoders, unet
@@ -151,6 +182,7 @@ def load_checkpoint_model_xl(
     pipe = StableDiffusionXLPipeline.from_single_file(
         checkpoint_path,
         torch_dtype=weight_dtype,
+        cache_dir=DIFFUSERS_CACHE_DIR,
     )
 
     unet = pipe.unet
