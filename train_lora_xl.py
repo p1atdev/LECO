@@ -190,7 +190,7 @@ def train(
                         prompt_pair.target[0],
                         prompt_pair.batch_size,
                     ),
-                    add_textembeddings=train_util.concat_embeddings(
+                    add_text_embeddings=train_util.concat_embeddings(
                         prompt_pair.unconditional[1],
                         prompt_pair.target[1],
                         prompt_pair.batch_size,
@@ -218,7 +218,7 @@ def train(
                     prompt_pair.positive[0],
                     prompt_pair.batch_size,
                 ),
-                add_textembeddings=train_util.concat_embeddings(
+                add_text_embeddings=train_util.concat_embeddings(
                     prompt_pair.unconditional[1],
                     prompt_pair.positive[1],
                     prompt_pair.batch_size,
@@ -236,7 +236,7 @@ def train(
                     prompt_pair.neutral[0],
                     prompt_pair.batch_size,
                 ),
-                add_textembeddings=train_util.concat_embeddings(
+                add_text_embeddings=train_util.concat_embeddings(
                     prompt_pair.unconditional[1],
                     prompt_pair.neutral[1],
                     prompt_pair.batch_size,
@@ -254,7 +254,7 @@ def train(
                     prompt_pair.unconditional[0],
                     prompt_pair.batch_size,
                 ),
-                add_textembeddings=train_util.concat_embeddings(
+                add_text_embeddings=train_util.concat_embeddings(
                     prompt_pair.unconditional[1],
                     prompt_pair.unconditional[1],
                     prompt_pair.batch_size,
@@ -279,7 +279,7 @@ def train(
                     prompt_pair.target[1],
                     prompt_pair.batch_size,
                 ),
-                add_textembeddings=train_util.concat_embeddings(
+                add_text_embeddings=train_util.concat_embeddings(
                     prompt_pair.unconditional[1],
                     prompt_pair.target[1],
                     prompt_pair.batch_size,
