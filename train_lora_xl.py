@@ -234,7 +234,7 @@ def train(
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-            neutral_latents = train_util.predict_noise(
+            neutral_latents = train_util.predict_noise_xl(
                 unet,
                 scheduler,
                 current_timestep,
@@ -288,7 +288,7 @@ def train(
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
                     prompt_pair.unconditional[0],
-                    prompt_pair.target[1],
+                    prompt_pair.target[0],
                     prompt_pair.batch_size,
                 ),
                 add_text_embeddings=train_util.concat_embeddings(
