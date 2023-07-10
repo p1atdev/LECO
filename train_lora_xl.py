@@ -23,6 +23,7 @@ from config_util import RootConfig
 import wandb
 
 DEVICE_CUDA = torch.device("cuda:0")
+NUM_IMAGES_PER_PROMPT = 1
 
 
 def flush():
@@ -114,7 +115,10 @@ def train(
             ]:
                 if cache[prompt] == None:
                     cache[prompt] = train_util.encode_prompts_xl(
-                        tokenizers, text_encoders, [prompt], num_images_per_prompt=1
+                        tokenizers,
+                        text_encoders,
+                        [prompt],
+                        num_images_per_prompt=NUM_IMAGES_PER_PROMPT,
                     )
 
             prompt_pairs.append(
@@ -172,12 +176,16 @@ def train(
                 scheduler, prompt_pair.batch_size, height, width, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
-            add_time_ids = train_util.get_add_time_ids(
-                height,
-                width,
-                dynamic_crops=prompt_pair.dynamic_crops,
-                dtype=weight_dtype,
-            ).to(DEVICE_CUDA, dtype=weight_dtype)
+            add_time_ids = (
+                train_util.get_add_time_ids(
+                    height,
+                    width,
+                    dynamic_crops=prompt_pair.dynamic_crops,
+                    dtype=weight_dtype,
+                )
+                .to(DEVICE_CUDA, dtype=weight_dtype)
+                .repeat(prompt_pair.batch_size * NUM_IMAGES_PER_PROMPT, 1)
+            )
 
             with network:
                 # ちょっとデノイズされれたものが返る
