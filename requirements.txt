@@ -8,3 +8,4 @@ pydantic
 dadaptation
 lion-pytorch
 wandb
+omegaconf
