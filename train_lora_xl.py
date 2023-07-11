@@ -58,7 +58,7 @@ def train(
         tokenizers,
         text_encoders,
         unet,
-        scheduler,
+        noise_scheduler,
     ) = model_util.load_models_xl(
         config.pretrained_model.name_or_path,
         scheduler_name=config.train.noise_scheduler,
@@ -143,7 +143,7 @@ def train(
 
     for i in pbar:
         with torch.no_grad():
-            scheduler.set_timesteps(
+            noise_scheduler.set_timesteps(
                 config.train.max_denoising_steps, device=DEVICE_CUDA
             )
 
@@ -173,7 +173,7 @@ def train(
                 print("batch_size:", prompt_pair.batch_size)
 
             latents = train_util.get_initial_latents(
-                scheduler, prompt_pair.batch_size, height, width, 1
+                noise_scheduler, prompt_pair.batch_size, height, width, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
             add_time_ids = train_util.get_add_time_ids(
@@ -187,7 +187,7 @@ def train(
                 # ちょっとデノイズされれたものが返る
                 denoised_latents = train_util.diffusion_xl(
                     unet,
-                    scheduler,
+                    noise_scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
                     text_embeddings=train_util.concat_embeddings(
                         prompt_pair.unconditional[0],
@@ -207,16 +207,16 @@ def train(
                     guidance_scale=3,
                 )
 
-            scheduler.set_timesteps(1000)
+            noise_scheduler.set_timesteps(1000)
 
-            current_timestep = scheduler.timesteps[
+            current_timestep = noise_scheduler.timesteps[
                 int(timesteps_to * 1000 / config.train.max_denoising_steps)
             ]
 
             # with network: の外では空のLoRAのみが有効になる
             positive_latents = train_util.predict_noise_xl(
                 unet,
-                scheduler,
+                noise_scheduler,
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
@@ -236,7 +236,7 @@ def train(
             ).to("cpu", dtype=torch.float32)
             neutral_latents = train_util.predict_noise_xl(
                 unet,
-                scheduler,
+                noise_scheduler,
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
@@ -256,7 +256,7 @@ def train(
             ).to("cpu", dtype=torch.float32)
             unconditional_latents = train_util.predict_noise_xl(
                 unet,
-                scheduler,
+                noise_scheduler,
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
@@ -283,7 +283,7 @@ def train(
         with network:
             target_latents = train_util.predict_noise_xl(
                 unet,
-                scheduler,
+                noise_scheduler,
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
@@ -357,7 +357,7 @@ def train(
 
     del (
         unet,
-        scheduler,
+        noise_scheduler,
         loss,
         optimizer,
         network,
