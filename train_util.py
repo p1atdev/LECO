@@ -10,6 +10,7 @@ from model_util import SDXL_TEXT_ENCODER_TYPE
 from tqdm import tqdm
 
 UNET_IN_CHANNELS = 4  # Stable Diffusion の in_channels は 4 で固定。XLも同じ。
+VAE_SCALE_FACTOR = 8  # 2 ** (len(vae.config.block_out_channels) - 1) = 8
 
 UNET_ATTENTION_TIME_EMBED_DIM = 256  # XL
 TEXT_ENCODER_2_PROJECTION_DIM = 1280
@@ -23,11 +24,19 @@ def get_random_noise(
         (
             batch_size,
             UNET_IN_CHANNELS,
-            height // 8,  # 縦と横これであってるのかわからないけど、どっちにしろ大きな問題は発生しないのでこれでいいや
-            width // 8,
+            height // VAE_SCALE_FACTOR,  # 縦と横これであってるのかわからないけど、どっちにしろ大きな問題は発生しないのでこれでいいや
+            width // VAE_SCALE_FACTOR,
         ),
         generator=generator,
     )
+
+
+# https://www.crosslabs.org/blog/diffusion-with-offset-noise
+def apply_noise_offset(latents: torch.FloatTensor, noise_offset: float):
+    latents = latents + noise_offset * torch.randn(
+        (latents.shape[0], latents.shape[1], 1, 1), device=latents.device
+    )
+    return latents
 
 
 def get_initial_latents(
@@ -76,12 +85,12 @@ def encode_prompts(
 
 
 # https://github.com/huggingface/diffusers/blob/78922ed7c7e66c20aa95159c7b7a6057ba7d590d/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L334-L348
-def text_encode_xl(text_encoder: SDXL_TEXT_ENCODER_TYPE, tokens):
+def text_encode_xl(text_encoder: SDXL_TEXT_ENCODER_TYPE, tokens: torch.FloatTensor):
     prompt_embeds = text_encoder(
         tokens.to(text_encoder.device), output_hidden_states=True
     )
     pooled_prompt_embeds = prompt_embeds[0]
-    prompt_embeds = prompt_embeds.hidden_states[-2]
+    prompt_embeds = prompt_embeds.hidden_states[-2]  # always penuultimate layer
 
     bs_embed, seq_len, _ = prompt_embeds.shape
     prompt_embeds = prompt_embeds.repeat(1, 1, 1)
@@ -96,8 +105,9 @@ def encode_prompts_xl(
     prompts: list[str],
     num_images_per_prompt: int = 1,
 ):
+    # text_encoder and text_encoder_2's penuultimate layer's output
     text_embeds_list = []
-    pooled_text_embeds = None
+    pooled_text_embeds = None  # always text_encoder_2's pool
 
     for tokenizer, text_encoder in zip(tokenizers, text_encoders):
         text_tokens = text_tokenize(tokenizer, prompts)
@@ -180,6 +190,27 @@ def diffusion(
     return latents
 
 
+def rescale_noise_cfg(
+    noise_cfg: torch.FloatTensor, noise_pred_text, guidance_rescale=0.0
+):
+    """
+    Rescale `noise_cfg` according to `guidance_rescale`. Based on findings of [Common Diffusion Noise Schedules and
+    Sample Steps are Flawed](https://arxiv.org/pdf/2305.08891.pdf). See Section 3.4
+    """
+    std_text = noise_pred_text.std(
+        dim=list(range(1, noise_pred_text.ndim)), keepdim=True
+    )
+    std_cfg = noise_cfg.std(dim=list(range(1, noise_cfg.ndim)), keepdim=True)
+    # rescale the results from guidance (fixes overexposure)
+    noise_pred_rescaled = noise_cfg * (std_text / std_cfg)
+    # mix with the original results from guidance by factor guidance_rescale to avoid "plain looking" images
+    noise_cfg = (
+        guidance_rescale * noise_pred_rescaled + (1 - guidance_rescale) * noise_cfg
+    )
+
+    return noise_cfg
+
+
 def predict_noise_xl(
     unet: UNet2DConditionModel,
     scheduler: SchedulerMixin,
@@ -189,6 +220,7 @@ def predict_noise_xl(
     add_text_embeddings: torch.FloatTensor,  # pooled なやつ
     add_time_ids: torch.FloatTensor,
     guidance_scale=7.5,
+    guidance_rescale=0.7,
 ) -> torch.FloatTensor:
     # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
     latent_model_input = torch.cat([latents] * 2)
@@ -214,6 +246,11 @@ def predict_noise_xl(
         noise_pred_text - noise_pred_uncond
     )
 
+    # https://github.com/huggingface/diffusers/blob/7a91ea6c2b53f94da930a61ed571364022b21044/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L775
+    noise_pred = rescale_noise_cfg(
+        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+    )
+
     return guided_target
 
 
@@ -225,9 +262,9 @@ def diffusion_xl(
     text_embeddings: tuple[torch.FloatTensor, torch.FloatTensor],
     add_text_embeddings: torch.FloatTensor,  # pooled なやつ
     add_time_ids: torch.FloatTensor,
+    guidance_scale: float = 1.0,
     total_timesteps: int = 1000,
     start_timesteps=0,
-    **kwargs,
 ):
     # latents_steps = []
 
@@ -240,7 +277,8 @@ def diffusion_xl(
             text_embeddings,
             add_text_embeddings,
             add_time_ids,
-            **kwargs,
+            guidance_scale=guidance_scale,
+            guidance_rescale=0.7,
         )
 
         # compute the previous noisy sample x_t -> x_t-1
