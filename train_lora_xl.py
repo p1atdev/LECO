@@ -103,8 +103,9 @@ def train(
         print(settings)
 
     # debug
-    debug_util.check_requires_grad(network)
-    debug_util.check_training_mode(network)
+    if config.logging.verbose:
+        debug_util.check_requires_grad(network)
+        debug_util.check_training_mode(network)
 
     cache = PromptEmbedsCache()
     prompt_pairs: list[PromptEmbedsPair] = []
