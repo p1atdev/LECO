@@ -38,6 +38,8 @@ class TrainConfig(BaseModel):
 
     max_denoising_steps: int = 50
 
+    noise_offset: float = 0.0
+
 
 class SaveConfig(BaseModel):
     name: str = "untitled"
