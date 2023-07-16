@@ -4,15 +4,30 @@ import yaml
 from pathlib import Path
 
 
-from pydantic import BaseModel, validator, root_validator
+from pydantic import BaseModel, root_validator
 import torch
 
-ACTION_TYPES = Literal["erase", "enhance"]
+ACTION_TYPES = Literal[
+    "erase",
+    "enhance",
+]
 
-PROMPT_EMBEDDING = Union[torch.FloatTensor, tuple[torch.FloatTensor, torch.FloatTensor]]
+
+# XL は二種類必要なので
+class PromptEmbedsXL:
+    text_embeds: torch.FloatTensor
+    pooled_embeds: torch.FloatTensor
+
+    def __init__(self, *args) -> None:
+        self.text_embeds = args[0]
+        self.pooled_embeds = args[1]
 
 
-class PromptCache:
+# SDv1.x, SDv2.x は FloatTensor、XL は PromptEmbedsXL
+PROMPT_EMBEDDING = Union[torch.FloatTensor, PromptEmbedsXL]
+
+
+class PromptEmbedsCache:  # 使いまわしたいので
     prompts: dict[str, PROMPT_EMBEDDING] = {}
 
     def __setitem__(self, __name: str, __value: PROMPT_EMBEDDING) -> None:
@@ -25,7 +40,7 @@ class PromptCache:
             return None
 
 
-class PromptSettings(BaseModel):
+class PromptSettings(BaseModel):  # yaml のやつ
     target: str
     positive: str = None  # if None, target will be used
     unconditional: str = ""  # default is ""
@@ -52,11 +67,11 @@ class PromptSettings(BaseModel):
         return values
 
 
-class PromptPair:
-    target: torch.FloatTensor  # not want to generate the concept
-    positive: torch.FloatTensor  # generate the concept
-    unconditional: torch.FloatTensor  # uncondition (default should be empty)
-    neutral: torch.FloatTensor  # base condition (default should be empty)
+class PromptEmbedsPair:
+    target: PROMPT_EMBEDDING  # not want to generate the concept
+    positive: PROMPT_EMBEDDING  # generate the concept
+    unconditional: PROMPT_EMBEDDING  # uncondition (default should be empty)
+    neutral: PROMPT_EMBEDDING  # base condition (default should be empty)
 
     guidance_scale: float
     resolution: int
@@ -70,10 +85,10 @@ class PromptPair:
     def __init__(
         self,
         loss_fn: torch.nn.Module,
-        target: torch.FloatTensor,
-        positive: torch.FloatTensor,
-        unconditional: torch.FloatTensor,
-        neutral: torch.FloatTensor,
+        target: PROMPT_EMBEDDING,
+        positive: PROMPT_EMBEDDING,
+        unconditional: PROMPT_EMBEDDING,
+        neutral: PROMPT_EMBEDDING,
         settings: PromptSettings,
     ) -> None:
         self.loss_fn = loss_fn

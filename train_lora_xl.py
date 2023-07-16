@@ -15,7 +15,12 @@ from lora import LoRANetwork, DEFAULT_TARGET_REPLACE, UNET_TARGET_REPLACE_MODULE
 import train_util
 import model_util
 import prompt_util
-from prompt_util import PromptCache, PromptPair, PromptSettings
+from prompt_util import (
+    PromptEmbedsCache,
+    PromptEmbedsPair,
+    PromptSettings,
+    PromptEmbedsXL,
+)
 import debug_util
 import config_util
 from config_util import RootConfig
@@ -101,8 +106,8 @@ def train(
     debug_util.check_requires_grad(network)
     debug_util.check_training_mode(network)
 
-    cache = PromptCache()
-    prompt_pairs: list[PromptPair] = []
+    cache = PromptEmbedsCache()
+    prompt_pairs: list[PromptEmbedsPair] = []
 
     with torch.no_grad():
         for settings in prompts:
@@ -114,15 +119,17 @@ def train(
                 settings.unconditional,
             ]:
                 if cache[prompt] == None:
-                    cache[prompt] = train_util.encode_prompts_xl(
-                        tokenizers,
-                        text_encoders,
-                        [prompt],
-                        num_images_per_prompt=NUM_IMAGES_PER_PROMPT,
+                    cache[prompt] = PromptEmbedsXL(
+                        train_util.encode_prompts_xl(
+                            tokenizers,
+                            text_encoders,
+                            [prompt],
+                            num_images_per_prompt=NUM_IMAGES_PER_PROMPT,
+                        )
                     )
 
             prompt_pairs.append(
-                PromptPair(
+                PromptEmbedsPair(
                     criteria,
                     cache[settings.target],
                     cache[settings.positive],
@@ -149,7 +156,7 @@ def train(
 
             optimizer.zero_grad()
 
-            prompt_pair: PromptPair = prompt_pairs[
+            prompt_pair: PromptEmbedsPair = prompt_pairs[
                 torch.randint(0, len(prompt_pairs), (1,)).item()
             ]
 
@@ -171,6 +178,7 @@ def train(
                 if prompt_pair.dynamic_resolution:
                     print("bucketed resolution:", (height, width))
                 print("batch_size:", prompt_pair.batch_size)
+                print("dynamic_crops:", prompt_pair.dynamic_crops)
 
             latents = train_util.get_initial_latents(
                 noise_scheduler, prompt_pair.batch_size, height, width, 1
@@ -190,13 +198,13 @@ def train(
                     noise_scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
                     text_embeddings=train_util.concat_embeddings(
-                        prompt_pair.unconditional[0],
-                        prompt_pair.target[0],
+                        prompt_pair.unconditional.text_embeds,
+                        prompt_pair.target.text_embeds,
                         prompt_pair.batch_size,
                     ),
                     add_text_embeddings=train_util.concat_embeddings(
-                        prompt_pair.unconditional[1],
-                        prompt_pair.target[1],
+                        prompt_pair.unconditional.pooled_embeds,
+                        prompt_pair.target.pooled_embeds,
                         prompt_pair.batch_size,
                     ),
                     add_time_ids=train_util.concat_embeddings(
@@ -220,13 +228,13 @@ def train(
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[0],
-                    prompt_pair.positive[0],
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.positive.text_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[1],
-                    prompt_pair.positive[1],
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.positive.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_time_ids=train_util.concat_embeddings(
@@ -240,13 +248,13 @@ def train(
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[0],
-                    prompt_pair.neutral[0],
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.neutral.text_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[1],
-                    prompt_pair.neutral[1],
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.neutral.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_time_ids=train_util.concat_embeddings(
@@ -260,13 +268,13 @@ def train(
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[0],
-                    prompt_pair.unconditional[0],
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.unconditional.text_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[1],
-                    prompt_pair.unconditional[1],
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.unconditional.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_time_ids=train_util.concat_embeddings(
@@ -287,13 +295,13 @@ def train(
                 current_timestep,
                 denoised_latents,
                 text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[0],
-                    prompt_pair.target[0],
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.target.text_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_text_embeddings=train_util.concat_embeddings(
-                    prompt_pair.unconditional[1],
-                    prompt_pair.target[1],
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.target.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
                 add_time_ids=train_util.concat_embeddings(

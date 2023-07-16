@@ -15,7 +15,7 @@ from lora import LoRANetwork, DEFAULT_TARGET_REPLACE, UNET_TARGET_REPLACE_MODULE
 import train_util
 import model_util
 import prompt_util
-from prompt_util import PromptCache, PromptPair, PromptSettings
+from prompt_util import PromptEmbedsCache, PromptEmbedsPair, PromptSettings
 import debug_util
 import config_util
 from config_util import RootConfig
@@ -94,8 +94,8 @@ def train(
     debug_util.check_requires_grad(network)
     debug_util.check_training_mode(network)
 
-    cache = PromptCache()
-    prompt_pairs: list[PromptPair] = []
+    cache = PromptEmbedsCache()
+    prompt_pairs: list[PromptEmbedsPair] = []
 
     with torch.no_grad():
         for settings in prompts:
@@ -112,7 +112,7 @@ def train(
                     )
 
             prompt_pairs.append(
-                PromptPair(
+                PromptEmbedsPair(
                     criteria,
                     cache[settings.target],
                     cache[settings.positive],
@@ -137,7 +137,7 @@ def train(
 
             optimizer.zero_grad()
 
-            prompt_pair: PromptPair = prompt_pairs[
+            prompt_pair: PromptEmbedsPair = prompt_pairs[
                 torch.randint(0, len(prompt_pairs), (1,)).item()
             ]
 

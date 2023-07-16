@@ -28,6 +28,7 @@ def get_random_noise(
             width // VAE_SCALE_FACTOR,
         ),
         generator=generator,
+        device="cpu",
     )
 
 
@@ -85,16 +86,20 @@ def encode_prompts(
 
 
 # https://github.com/huggingface/diffusers/blob/78922ed7c7e66c20aa95159c7b7a6057ba7d590d/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L334-L348
-def text_encode_xl(text_encoder: SDXL_TEXT_ENCODER_TYPE, tokens: torch.FloatTensor):
+def text_encode_xl(
+    text_encoder: SDXL_TEXT_ENCODER_TYPE,
+    tokens: torch.FloatTensor,
+    num_images_per_prompt: int = 1,
+):
     prompt_embeds = text_encoder(
         tokens.to(text_encoder.device), output_hidden_states=True
     )
     pooled_prompt_embeds = prompt_embeds[0]
-    prompt_embeds = prompt_embeds.hidden_states[-2]  # always penuultimate layer
+    prompt_embeds = prompt_embeds.hidden_states[-2]  # always penultimate layer
 
     bs_embed, seq_len, _ = prompt_embeds.shape
-    prompt_embeds = prompt_embeds.repeat(1, 1, 1)
-    prompt_embeds = prompt_embeds.view(bs_embed * 1, seq_len, -1)
+    prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
+    prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
 
     return prompt_embeds, pooled_prompt_embeds
 
@@ -104,18 +109,16 @@ def encode_prompts_xl(
     text_encoders: list[SDXL_TEXT_ENCODER_TYPE],
     prompts: list[str],
     num_images_per_prompt: int = 1,
-):
+) -> tuple[torch.FloatTensor, torch.FloatTensor]:
     # text_encoder and text_encoder_2's penuultimate layer's output
     text_embeds_list = []
     pooled_text_embeds = None  # always text_encoder_2's pool
 
     for tokenizer, text_encoder in zip(tokenizers, text_encoders):
-        text_tokens = text_tokenize(tokenizer, prompts)
-        text_embeds, pooled_text_embeds = text_encode_xl(text_encoder, text_tokens)
-
-        bs_embed, seq_len, _ = text_embeds.shape
-        text_embeds = text_embeds.repeat(1, num_images_per_prompt, 1)
-        text_embeds = text_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
+        text_tokens_input_ids = text_tokenize(tokenizer, prompts)
+        text_embeds, pooled_text_embeds = text_encode_xl(
+            text_encoder, text_tokens_input_ids, num_images_per_prompt
+        )
 
         text_embeds_list.append(text_embeds)
 

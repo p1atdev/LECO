@@ -147,6 +147,7 @@ def load_diffusers_model_xl(
             subfolder="tokenizer_2",
             torch_dtype=weight_dtype,
             cache_dir=DIFFUSERS_CACHE_DIR,
+            pad_token_id=0,  # same as open clip
         ),
     ]
 
@@ -188,6 +189,8 @@ def load_checkpoint_model_xl(
     unet = pipe.unet
     tokenizers = [pipe.tokenizer, pipe.tokenizer_2]
     text_encoders = [pipe.text_encoder, pipe.text_encoder_2]
+    if len(text_encoders) == 2:
+        text_encoders[1].pad_token_id = 0
 
     del pipe
 
