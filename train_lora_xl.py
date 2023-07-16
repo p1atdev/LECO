@@ -15,7 +15,12 @@ from lora import LoRANetwork, DEFAULT_TARGET_REPLACE, UNET_TARGET_REPLACE_MODULE
 import train_util
 import model_util
 import prompt_util
-from prompt_util import PromptEmbedsCache, PromptEmbedsPair, PromptSettings
+from prompt_util import (
+    PromptEmbedsCache,
+    PromptEmbedsPair,
+    PromptSettings,
+    PromptEmbedsXL,
+)
 import debug_util
 import config_util
 from config_util import RootConfig
@@ -23,6 +28,7 @@ from config_util import RootConfig
 import wandb
 
 DEVICE_CUDA = torch.device("cuda:0")
+NUM_IMAGES_PER_PROMPT = 1
 
 
 def flush():
@@ -53,18 +59,24 @@ def train(
     weight_dtype = config_util.parse_precision(config.train.precision)
     save_weight_dtype = config_util.parse_precision(config.train.precision)
 
-    tokenizer, text_encoder, unet, noise_scheduler = model_util.load_models(
+    (
+        tokenizers,
+        text_encoders,
+        unet,
+        noise_scheduler,
+    ) = model_util.load_models_xl(
         config.pretrained_model.name_or_path,
         scheduler_name=config.train.noise_scheduler,
-        v2=config.pretrained_model.v2,
-        v_pred=config.pretrained_model.v_pred,
     )
 
-    text_encoder.to(DEVICE_CUDA, dtype=weight_dtype)
-    text_encoder.eval()
+    for text_encoder in text_encoders:
+        text_encoder.to(DEVICE_CUDA, dtype=weight_dtype)
+        text_encoder.requires_grad_(False)
+        text_encoder.eval()
 
     unet.to(DEVICE_CUDA, dtype=weight_dtype)
-    unet.enable_xformers_memory_efficient_attention()
+    if config.other.use_xformers:
+        unet.enable_xformers_memory_efficient_attention()
     unet.requires_grad_(False)
     unet.eval()
 
@@ -107,8 +119,13 @@ def train(
                 settings.unconditional,
             ]:
                 if cache[prompt] == None:
-                    cache[prompt] = train_util.encode_prompts(
-                        tokenizer, text_encoder, [prompt]
+                    cache[prompt] = PromptEmbedsXL(
+                        train_util.encode_prompts_xl(
+                            tokenizers,
+                            text_encoders,
+                            [prompt],
+                            num_images_per_prompt=NUM_IMAGES_PER_PROMPT,
+                        )
                     )
 
             prompt_pairs.append(
@@ -122,12 +139,14 @@ def train(
                 )
             )
 
-    del tokenizer
-    del text_encoder
+    for tokenizer, text_encoder in zip(tokenizers, text_encoders):
+        del tokenizer, text_encoder
 
     flush()
 
     pbar = tqdm(range(config.train.iterations))
+
+    loss = None
 
     for i in pbar:
         with torch.no_grad():
@@ -146,10 +165,7 @@ def train(
                 1, config.train.max_denoising_steps, (1,)
             ).item()
 
-            height, width = (
-                prompt_pair.resolution,
-                prompt_pair.resolution,
-            )
+            height, width = prompt_pair.resolution, prompt_pair.resolution
             if prompt_pair.dynamic_resolution:
                 height, width = train_util.get_random_resolution_in_bucket(
                     prompt_pair.resolution
@@ -162,21 +178,37 @@ def train(
                 if prompt_pair.dynamic_resolution:
                     print("bucketed resolution:", (height, width))
                 print("batch_size:", prompt_pair.batch_size)
+                print("dynamic_crops:", prompt_pair.dynamic_crops)
 
             latents = train_util.get_initial_latents(
                 noise_scheduler, prompt_pair.batch_size, height, width, 1
             ).to(DEVICE_CUDA, dtype=weight_dtype)
 
+            add_time_ids = train_util.get_add_time_ids(
+                height,
+                width,
+                dynamic_crops=prompt_pair.dynamic_crops,
+                dtype=weight_dtype,
+            ).to(DEVICE_CUDA, dtype=weight_dtype)
+
             with network:
                 # ちょっとデノイズされれたものが返る
-                denoised_latents = train_util.diffusion(
+                denoised_latents = train_util.diffusion_xl(
                     unet,
                     noise_scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
-                    train_util.concat_embeddings(
-                        prompt_pair.unconditional,
-                        prompt_pair.target,
+                    text_embeddings=train_util.concat_embeddings(
+                        prompt_pair.unconditional.text_embeds,
+                        prompt_pair.target.text_embeds,
                         prompt_pair.batch_size,
+                    ),
+                    add_text_embeddings=train_util.concat_embeddings(
+                        prompt_pair.unconditional.pooled_embeds,
+                        prompt_pair.target.pooled_embeds,
+                        prompt_pair.batch_size,
+                    ),
+                    add_time_ids=train_util.concat_embeddings(
+                        add_time_ids, add_time_ids, prompt_pair.batch_size
                     ),
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
@@ -190,39 +222,63 @@ def train(
             ]
 
             # with network: の外では空のLoRAのみが有効になる
-            positive_latents = train_util.predict_noise(
+            positive_latents = train_util.predict_noise_xl(
                 unet,
                 noise_scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(
-                    prompt_pair.unconditional,
-                    prompt_pair.positive,
+                text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.positive.text_embeds,
                     prompt_pair.batch_size,
+                ),
+                add_text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.positive.pooled_embeds,
+                    prompt_pair.batch_size,
+                ),
+                add_time_ids=train_util.concat_embeddings(
+                    add_time_ids, add_time_ids, prompt_pair.batch_size
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-            neutral_latents = train_util.predict_noise(
+            neutral_latents = train_util.predict_noise_xl(
                 unet,
                 noise_scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(
-                    prompt_pair.unconditional,
-                    prompt_pair.neutral,
+                text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.neutral.text_embeds,
                     prompt_pair.batch_size,
+                ),
+                add_text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.neutral.pooled_embeds,
+                    prompt_pair.batch_size,
+                ),
+                add_time_ids=train_util.concat_embeddings(
+                    add_time_ids, add_time_ids, prompt_pair.batch_size
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
-            unconditional_latents = train_util.predict_noise(
+            unconditional_latents = train_util.predict_noise_xl(
                 unet,
                 noise_scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(
-                    prompt_pair.unconditional,
-                    prompt_pair.unconditional,
+                text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.unconditional.text_embeds,
                     prompt_pair.batch_size,
+                ),
+                add_text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.batch_size,
+                ),
+                add_time_ids=train_util.concat_embeddings(
+                    add_time_ids, add_time_ids, prompt_pair.batch_size
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
@@ -233,15 +289,23 @@ def train(
                 print("unconditional_latents:", unconditional_latents[0, 0, :5, :5])
 
         with network:
-            target_latents = train_util.predict_noise(
+            target_latents = train_util.predict_noise_xl(
                 unet,
                 noise_scheduler,
                 current_timestep,
                 denoised_latents,
-                train_util.concat_embeddings(
-                    prompt_pair.unconditional,
-                    prompt_pair.target,
+                text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.text_embeds,
+                    prompt_pair.target.text_embeds,
                     prompt_pair.batch_size,
+                ),
+                add_text_embeddings=train_util.concat_embeddings(
+                    prompt_pair.unconditional.pooled_embeds,
+                    prompt_pair.target.pooled_embeds,
+                    prompt_pair.batch_size,
+                ),
+                add_time_ids=train_util.concat_embeddings(
+                    add_time_ids, add_time_ids, prompt_pair.batch_size
                 ),
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
