@@ -5,20 +5,27 @@ pretrained_model:
   v2: true # true if model is v2.x
   v_pred: true # true if model uses v-prediction
 
+  # clip_skip: 2 # CLIP skip for v1.x models if needed (optional)
+
 network:
   type: "lierla" # or "c3lier"
   rank: 4
   alpha: 1.0
-  training_method: "full" # selfattn, xattn, noxattn, or innoxattn
+
+  # training_method: "full" # selfattn, xattn, noxattn, or innoxattn. the default is "full". if you are not familiar with ESD, it's recommended not to touch.
 
 train:
-  precision: "bfloat16"
+  precision: "bfloat16" # use float32 if you're using Colab T4.
   noise_scheduler: "ddim" # or "ddpm", "lms", "euler_a"
   iterations: 500
   lr: 1e-4
   optimizer: "AdamW"
   lr_scheduler: "constant"
-  max_denoising_steps: 50
+  max_denoising_steps: 50 # the default is 50, but about 30 is faster to train and not so bad.
+
+  # ---Advanced options---
+  # noise_offset: 0.1 # 0.05 is used if  not set when using SDXL.
+  # pyramid_noise_discount: 0.9
 
 save:
   name: "van_gogh"
@@ -30,5 +37,22 @@ logging:
   use_wandb: false
   verbose: false
 
+  ## sample images will be sent to wandb per 50 steps for these settings
+  # sample:
+  #   - positive: "oil painting by van gogh"
+  #     negative: ""
+  #     width: 512
+  #     height: 768
+  #     num_inference_steps: 20
+  #     cfg_scale: 7.5
+  #     seed: 100
+  #   - positive: "portrait of van gogh"
+  #     width: 512
+  #     height: 768
+  #     seed: 200
+  #   - positive: "photo of a lemonade"
+  #     seed: -1
+  # sample_per_steps: 50
+
 other:
-  use_xformers: true
+  use_xformers: true # recommended
