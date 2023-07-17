@@ -19,6 +19,7 @@ from prompt_util import PromptEmbedsCache, PromptEmbedsPair, PromptSettings
 import debug_util
 import config_util
 from config_util import RootConfig
+import sample_util
 
 import wandb
 
@@ -53,7 +54,7 @@ def train(
     weight_dtype = config_util.parse_precision(config.train.precision)
     save_weight_dtype = config_util.parse_precision(config.train.precision)
 
-    tokenizer, text_encoder, unet, noise_scheduler = model_util.load_models(
+    tokenizer, text_encoder, unet, vae, noise_scheduler = model_util.load_models(
         config.pretrained_model.name_or_path,
         scheduler_name=config.train.noise_scheduler,
         v2=config.pretrained_model.v2,
@@ -86,6 +87,14 @@ def train(
     )
     criteria = torch.nn.MSELoss()
 
+    if config.logging.sample is None:
+        # サンプル生成しないので
+        del vae
+    else:
+        # VAE はサンプルにしか使わないのでずっとfp16
+        vae.eval()
+        vae.to(DEVICE_CUDA, dtype=torch.float16)
+
     print("Prompts")
     for settings in prompts:
         print(settings)
@@ -96,9 +105,11 @@ def train(
         debug_util.check_training_mode(network)
 
     cache = PromptEmbedsCache()
+    sample_cache = PromptEmbedsCache()
     prompt_pairs: list[PromptEmbedsPair] = []
 
     with torch.no_grad():
+        print("Caching prompts...")
         for settings in prompts:
             print(settings)
             for prompt in [
@@ -122,6 +133,18 @@ def train(
                     settings,
                 )
             )
+
+        if config.logging.sample is not None:
+            print("Logging sample images is enabled. Caching prompts...")
+            for sample in config.logging.sample:
+                for prompt in [
+                    sample.positive,
+                    sample.negative,
+                ]:
+                    if sample_cache[prompt] == None:
+                        sample_cache[prompt] = train_util.encode_prompts(
+                            tokenizer, text_encoder, [prompt]
+                        )
 
     del tokenizer
     del text_encoder
@@ -166,7 +189,16 @@ def train(
 
             latents = train_util.get_initial_latents(
                 noise_scheduler, prompt_pair.batch_size, height, width, 1
-            ).to(DEVICE_CUDA, dtype=weight_dtype)
+            )
+            if config.train.noise_offset != 0.0:  # noise offset
+                latents = train_util.apply_noise_offset(
+                    latents, config.train.noise_offset
+                )
+            if config.train.pyramid_noise_discount != 0.0:  # pyramid noise discount
+                latents = train_util.apply_pyramid_noise(
+                    latents, config.train.pyramid_noise_discount
+                )
+            latents = latents.to(DEVICE_CUDA, dtype=weight_dtype)
 
             with network:
                 # ちょっとデノイズされれたものが返る
@@ -175,7 +207,7 @@ def train(
                     noise_scheduler,
                     latents,  # 単純なノイズのlatentsを渡す
                     train_util.concat_embeddings(
-                        prompt_pair.unconditional,
+                        cache[""],  # 最初は普通にやる
                         prompt_pair.target,
                         prompt_pair.batch_size,
                     ),
@@ -263,10 +295,6 @@ def train(
 
         # 1000倍しないとずっと0.000...になってしまって見た目的に面白くない
         pbar.set_description(f"Loss*1k: {loss.item()*1000:.4f}")
-        if config.logging.use_wandb:
-            wandb.log(
-                {"loss": loss, "iteration": i, "lr": lr_scheduler.get_last_lr()[0]}
-            )
 
         loss.backward()
         optimizer.step()
@@ -280,6 +308,56 @@ def train(
             latents,
         )
         flush()
+
+        # wandb に記録するログ
+        log_dict = {
+            "loss": loss,
+            "iteration": i,
+            "lr": lr_scheduler.get_last_lr()[0],
+        }
+
+        if (
+            config.logging.sample_per_steps != 0
+            and i != 0
+            and i % config.logging.sample_per_steps == 0
+        ):
+            if config.logging.sample is not None:
+                print("Generating sample images...")
+                total_sample_images = 0
+                with network:
+                    for sample in config.logging.sample:
+                        print("Generating sample image:", sample.positive)
+                        sample_images = sample_util.sample_image(
+                            unet,
+                            noise_scheduler,
+                            vae,
+                            sample_cache[sample.positive],
+                            sample_cache[sample.negative],
+                            width=sample.width,
+                            height=sample.height,
+                            num_inference_steps=sample.num_inference_steps,
+                            cfg_scale=sample.cfg_scale,
+                            seed=sample.seed,
+                            weight_dtype=weight_dtype,
+                        )
+                        for image in sample_images:
+                            # 画像をログイに追加
+                            log_dict[f"sample_{total_sample_images}"] = wandb.Image(
+                                image, caption=sample.positive
+                            )
+                            total_sample_images += 1
+                # save samples
+                sample_util.save_images(
+                    sample_images,
+                    save_path / "samples",
+                    filename_base=f"sample_{i}",
+                )
+                del sample_images
+
+        if config.logging.use_wandb:
+            wandb.log(
+                log_dict,
+            )
 
         if (
             i % config.save.per_steps == 0

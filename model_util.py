@@ -7,6 +7,7 @@ from diffusers import (
     SchedulerMixin,
     StableDiffusionPipeline,
     StableDiffusionXLPipeline,
+    AutoencoderKL,
 )
 from diffusers.schedulers import (
     DDIMScheduler,
@@ -31,9 +32,7 @@ def load_diffusers_model(
     v2: bool = False,
     clip_skip: Optional[int] = None,
     weight_dtype: torch.dtype = torch.float32,
-) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel,]:
-    # VAE はいらない
-
+) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel, AutoencoderKL]:
     if v2:
         tokenizer = CLIPTokenizer.from_pretrained(
             TOKENIZER_V2_MODEL_NAME,
@@ -71,7 +70,14 @@ def load_diffusers_model(
         cache_dir=DIFFUSERS_CACHE_DIR,
     )
 
-    return tokenizer, text_encoder, unet
+    vae = AutoencoderKL.from_pretrained(
+        pretrained_model_name_or_path,
+        subfolder="vae",
+        torch_dtype=weight_dtype,
+        cache_dir=DIFFUSERS_CACHE_DIR,
+    )
+
+    return tokenizer, text_encoder, unet, vae
 
 
 def load_checkpoint_model(
@@ -79,7 +85,7 @@ def load_checkpoint_model(
     v2: bool = False,
     clip_skip: Optional[int] = None,
     weight_dtype: torch.dtype = torch.float32,
-) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel,]:
+) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel, AutoencoderKL]:
     pipe = StableDiffusionPipeline.from_ckpt(
         checkpoint_path,
         upcast_attention=True if v2 else False,
@@ -95,10 +101,11 @@ def load_checkpoint_model(
             text_encoder.config.num_hidden_layers = 24 - (clip_skip - 1)
         else:
             text_encoder.config.num_hidden_layers = 12 - (clip_skip - 1)
+    vae = pipe.vae
 
     del pipe
 
-    return tokenizer, text_encoder, unet
+    return tokenizer, text_encoder, unet, vae
 
 
 def load_models(
@@ -107,15 +114,21 @@ def load_models(
     v2: bool = False,
     v_pred: bool = False,
     weight_dtype: torch.dtype = torch.float32,
-) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel, SchedulerMixin,]:
+) -> tuple[
+    CLIPTokenizer,
+    CLIPTextModel,
+    UNet2DConditionModel,
+    AutoencoderKL,
+    SchedulerMixin,
+]:
     if pretrained_model_name_or_path.endswith(
         ".ckpt"
     ) or pretrained_model_name_or_path.endswith(".safetensors"):
-        tokenizer, text_encoder, unet = load_checkpoint_model(
+        tokenizer, text_encoder, unet, vae = load_checkpoint_model(
             pretrained_model_name_or_path, v2=v2, weight_dtype=weight_dtype
         )
     else:  # diffusers
-        tokenizer, text_encoder, unet = load_diffusers_model(
+        tokenizer, text_encoder, unet, vae = load_diffusers_model(
             pretrained_model_name_or_path, v2=v2, weight_dtype=weight_dtype
         )
 
@@ -126,13 +139,13 @@ def load_models(
         prediction_type="v_prediction" if v_pred else "epsilon",
     )
 
-    return tokenizer, text_encoder, unet, scheduler
+    return tokenizer, text_encoder, unet, vae, scheduler
 
 
 def load_diffusers_model_xl(
     pretrained_model_name_or_path: str,
     weight_dtype: torch.dtype = torch.float32,
-) -> tuple[list[CLIPTokenizer], list[SDXL_TEXT_ENCODER_TYPE], UNet2DConditionModel,]:
+) -> tuple[list[CLIPTokenizer], list[SDXL_TEXT_ENCODER_TYPE], UNet2DConditionModel]:
     # returns tokenizer, tokenizer_2, text_encoder, text_encoder_2, unet
 
     tokenizers = [

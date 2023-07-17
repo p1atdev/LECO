@@ -40,6 +40,35 @@ def apply_noise_offset(latents: torch.FloatTensor, noise_offset: float):
     return latents
 
 
+# https://wandb.ai/johnowhitaker/multires_noise/reports/Multi-Resolution-Noise-for-Diffusion-Model-Training--VmlldzozNjYyOTU2
+def apply_pyramid_noise(latents: torch.FloatTensor, discount: float = 0.9):
+    # Extract shape parameters from input tensor
+    batch_size, channels, width, height = latents.shape
+    upsample = torch.nn.Upsample(size=(width, height), mode="bilinear")
+    for i in range(10):
+        # ランダムなサイズのスケールファクター
+        scale_factor = (2 * torch.rand(1) + 2).item()
+
+        # 新しいサイズ (ステップが進むごとに小さくなる)
+        width_scaled, height_scaled = max(1, int(width / (scale_factor**i))), max(
+            1, int(height / (scale_factor**i))
+        )
+
+        # Generate noise tensor at smaller scale and upsample it
+        scaled_noise = torch.randn(
+            batch_size, channels, width_scaled, height_scaled
+        ).to(latents)
+        upsampled_noise = upsample(scaled_noise)
+
+        # Add the upsampled noise to the main noise tensor, with discounting
+        latents += upsampled_noise * discount**i
+
+        # 1x1 が最小なので、これ以上小さくなったら終了
+        if width_scaled == 1 or height_scaled == 1:
+            break
+    return latents / latents.std()  # 単位分散までスケールバックするらしい
+
+
 def get_initial_latents(
     scheduler: SchedulerMixin,
     n_imgs: int,
@@ -177,13 +206,18 @@ def diffusion(
     text_embeddings: torch.FloatTensor,
     total_timesteps: int = 1000,
     start_timesteps=0,
-    **kwargs,
+    guidance_scale=7.5,
 ):
     # latents_steps = []
 
     for timestep in tqdm(scheduler.timesteps[start_timesteps:total_timesteps]):
         noise_pred = predict_noise(
-            unet, scheduler, timestep, latents, text_embeddings, **kwargs
+            unet,
+            scheduler,
+            timestep,
+            latents,
+            text_embeddings,
+            guidance_scale,
         )
 
         # compute the previous noisy sample x_t -> x_t-1

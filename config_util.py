@@ -39,6 +39,7 @@ class TrainConfig(BaseModel):
     max_denoising_steps: int = 50
 
     noise_offset: float = 0.0
+    pyramid_noise_discount: float = 0.0
 
 
 class SaveConfig(BaseModel):
@@ -48,10 +49,24 @@ class SaveConfig(BaseModel):
     precision: PRECISION_TYPES = "float32"
 
 
+class SampleConfig(BaseModel):
+    positive: str
+    negative: str = ""
+
+    width: int = 512
+    height: int = 512
+    num_inference_steps: int = 20
+    cfg_scale: float = 7.5
+    seed: int = -1
+
+
 class LoggingConfig(BaseModel):
     use_wandb: bool = False
 
     verbose: bool = False
+
+    sample: Optional[list[SampleConfig]] = None
+    sample_per_steps: int = 100
 
 
 class OtherConfig(BaseModel):
