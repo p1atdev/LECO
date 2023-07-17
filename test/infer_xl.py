@@ -23,7 +23,7 @@ SDXL_VAE_FP16_FIX_MODEL_NAME = "madebyollin/sdxl-vae-fp16-fix"
 DEVICE_CUDA = torch.device("cuda:0")
 NUM_IMAGES_PER_PROMPT = 1
 
-SDXL_NOISE_OFFSET = 0.0357
+SDXL_NOISE_OFFSET = 0.05
 
 DDIM_STEPS = 16
 

@@ -30,6 +30,8 @@ import wandb
 DEVICE_CUDA = torch.device("cuda:0")
 NUM_IMAGES_PER_PROMPT = 1
 
+SDXL_DEFAULT_NOISE_OFFSET = 0.05
+
 
 def flush():
     torch.cuda.empty_cache()
@@ -183,7 +185,19 @@ def train(
 
             latents = train_util.get_initial_latents(
                 noise_scheduler, prompt_pair.batch_size, height, width, 1
-            ).to(DEVICE_CUDA, dtype=weight_dtype)
+            )
+            # 強制 noise offset
+            latents = train_util.apply_noise_offset(
+                latents,
+                config.train.noise_offset
+                if config.train.noise_offset != 0.0
+                else SDXL_DEFAULT_NOISE_OFFSET,
+            )
+            if config.train.pyramid_noise_discount != 0.0:  # pyramid noise discount
+                latents = train_util.apply_pyramid_noise(
+                    latents, config.train.pyramid_noise_discount
+                )
+            latents = latents.to(DEVICE_CUDA, dtype=weight_dtype)
 
             add_time_ids = train_util.get_add_time_ids(
                 height,
@@ -191,6 +205,10 @@ def train(
                 dynamic_crops=prompt_pair.dynamic_crops,
                 dtype=weight_dtype,
             ).to(DEVICE_CUDA, dtype=weight_dtype)
+
+            add_time_ids = train_util.concat_embeddings(
+                add_time_ids, add_time_ids, prompt_pair.batch_size
+            )
 
             with network:
                 # ちょっとデノイズされれたものが返る
@@ -208,9 +226,7 @@ def train(
                         prompt_pair.target.pooled_embeds,
                         prompt_pair.batch_size,
                     ),
-                    add_time_ids=train_util.concat_embeddings(
-                        add_time_ids, add_time_ids, prompt_pair.batch_size
-                    ),
+                    add_time_ids=add_time_ids,
                     start_timesteps=0,
                     total_timesteps=timesteps_to,
                     guidance_scale=3,
@@ -238,9 +254,7 @@ def train(
                     prompt_pair.positive.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
-                add_time_ids=train_util.concat_embeddings(
-                    add_time_ids, add_time_ids, prompt_pair.batch_size
-                ),
+                add_time_ids=add_time_ids,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
             neutral_latents = train_util.predict_noise_xl(
@@ -258,9 +272,7 @@ def train(
                     prompt_pair.neutral.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
-                add_time_ids=train_util.concat_embeddings(
-                    add_time_ids, add_time_ids, prompt_pair.batch_size
-                ),
+                add_time_ids=add_time_ids,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
             unconditional_latents = train_util.predict_noise_xl(
@@ -278,9 +290,7 @@ def train(
                     prompt_pair.unconditional.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
-                add_time_ids=train_util.concat_embeddings(
-                    add_time_ids, add_time_ids, prompt_pair.batch_size
-                ),
+                add_time_ids=add_time_ids,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
 
@@ -305,9 +315,7 @@ def train(
                     prompt_pair.target.pooled_embeds,
                     prompt_pair.batch_size,
                 ),
-                add_time_ids=train_util.concat_embeddings(
-                    add_time_ids, add_time_ids, prompt_pair.batch_size
-                ),
+                add_time_ids=add_time_ids,
                 guidance_scale=1,
             ).to("cpu", dtype=torch.float32)
 
