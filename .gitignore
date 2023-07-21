@@ -127,6 +127,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+huggingface/
 
 # Spyder project settings
 .spyderproject
@@ -164,8 +165,6 @@ wandb/
 
 # output
 output/
-
-huggingface/
 
 # for testing
 /config.yaml
