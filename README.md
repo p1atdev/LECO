@@ -78,7 +78,7 @@ other:
   batch_size: 2
 ```
 
-See the [example config](/examples/config.py) for more details.
+See the [example config](/examples/config.yaml) for more details.
 
 Note: You can use float16 but it is unstable and not recommended. Please use bfloat16 or float32. 
 
