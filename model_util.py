@@ -1,5 +1,7 @@
 from typing import Literal, Union, Optional
 
+from pathlib import Path
+
 import torch
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPTextModelWithProjection
 from diffusers import (
@@ -16,6 +18,7 @@ from diffusers.schedulers import (
     EulerAncestralDiscreteScheduler,
 )
 
+from textual_inversion import TextualInversionModel
 
 TOKENIZER_V1_MODEL_NAME = "CompVis/stable-diffusion-v1-4"
 TOKENIZER_V2_MODEL_NAME = "stabilityai/stable-diffusion-2-1"
@@ -255,7 +258,7 @@ def create_noise_scheduler(
             beta_schedule="scaled_linear",
             num_train_timesteps=1000,
             clip_sample=False,
-            prediction_type=prediction_type,  # これでいいの？
+            prediction_type=prediction_type,
         )
     elif name == "ddpm":
         # https://huggingface.co/docs/diffusers/v0.17.1/en/api/schedulers/ddpm
@@ -289,3 +292,23 @@ def create_noise_scheduler(
         raise ValueError(f"Unknown scheduler name: {name}")
 
     return scheduler
+
+
+# TI の読み込み
+def load_textual_inversion(
+    pretrained_model_name_or_path: str | list[str],
+) -> TextualInversionModel | list[TextualInversionModel]:
+    textual_inversion_models = []
+    model_path = (
+        [pretrained_model_name_or_path]
+        if isinstance(pretrained_model_name_or_path, str)
+        else pretrained_model_name_or_path
+    )
+
+    for path in model_path:
+        textual_inversion_models.append(TextualInversionModel.from_pretrained(path))
+
+    if isinstance(pretrained_model_name_or_path, str):
+        return textual_inversion_models[0]
+    else:
+        return textual_inversion_models
