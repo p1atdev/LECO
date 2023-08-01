@@ -28,10 +28,10 @@ def sample_image(
     width: int = 512,
     height: int = 512,
     num_inference_steps: int = 20,
-    cfg_scale: float = 0.7,
+    cfg_scale: float = 7.0,
     seed: int = -1,
     weight_dtype: torch.dtype = torch.float16,
-) -> Image.Image:
+) -> list[Image.Image]:
     generator = torch.Generator()
     if seed >= 0:
         generator.manual_seed(seed)
