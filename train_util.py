@@ -81,7 +81,7 @@ def get_initial_latents(
         n_prompts, 1, 1, 1
     )
 
-    latents = noise * scheduler.init_noise_sigma.to(noise.device)
+    latents = noise * torch.Tensor(scheduler.init_noise_sigma).to(noise.device)
 
     return latents
 
