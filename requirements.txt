@@ -7,5 +7,6 @@ pyyaml
 pydantic
 dadaptation
 lion-pytorch
+prodigyopt
 wandb
 omegaconf

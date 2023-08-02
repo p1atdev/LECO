@@ -362,8 +362,12 @@ def get_optimizer(name: str):
             from lion_pytorch import Lion
 
             return Lion
+        elif name == "prodigy":
+            import prodigyopt
+            
+            return prodigyopt.Prodigy
         else:
-            raise ValueError("Optimizer must be adam, adamw or lion")
+            raise ValueError("Optimizer must be adam, adamw, lion or Prodigy")
 
 
 def get_lr_scheduler(
