@@ -89,7 +89,7 @@ def load_checkpoint_model(
     clip_skip: Optional[int] = None,
     weight_dtype: torch.dtype = torch.float32,
 ) -> tuple[CLIPTokenizer, CLIPTextModel, UNet2DConditionModel, AutoencoderKL]:
-    pipe = StableDiffusionPipeline.from_ckpt(
+    pipe = StableDiffusionPipeline.from_single_file(
         checkpoint_path,
         upcast_attention=True if v2 else False,
         torch_dtype=weight_dtype,
