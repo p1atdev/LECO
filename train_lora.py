@@ -20,6 +20,7 @@ import debug_util
 import config_util
 from config_util import RootConfig
 import sample_util
+from textual_inversion import get_all_embeddings_in_folder, filter_embeddings_by_prompt
 
 import wandb
 
@@ -47,9 +48,6 @@ def train(
 
     if config.logging.verbose:
         print(metadata)
-
-    if config.logging.use_wandb:
-        wandb.init(project=f"LECO_{config.save.name}", config=metadata)
 
     weight_dtype = config_util.parse_precision(config.train.precision)
     save_weight_dtype = config_util.parse_precision(config.train.precision)
@@ -108,6 +106,14 @@ def train(
     sample_cache = PromptEmbedsCache()
     prompt_pairs: list[PromptEmbedsPair] = []
 
+    # ti のディレクトリが指定されたらTIを取得
+    all_embs = (
+        get_all_embeddings_in_folder(config.pretrained_model.embeddings_dir)
+        if config.pretrained_model.embeddings_dir is not None
+        else []
+    )
+    used_embs = set()
+
     with torch.no_grad():
         print("Caching prompts...")
         for settings in prompts:
@@ -119,6 +125,26 @@ def train(
                 settings.unconditional,
             ]:
                 if cache[prompt] == None:
+                    use_embs = filter_embeddings_by_prompt(
+                        all_embs, prompt
+                    )  # 使うものだけにフィルター
+                    for emb in use_embs:
+                        if emb in used_embs:
+                            # remove
+                            use_embs.remove(emb)
+                        else:
+                            used_embs.add(emb)
+                    if len(use_embs) > 0:
+                        print("Loading textual inversions...")
+                        embs = model_util.load_textual_inversion(use_embs)
+                        embs = [embs] if not isinstance(embs, list) else embs
+                        # TI を適用
+                        for emb in embs:
+                            tokenizer, text_encoder = emb.apply_textual_inversion(
+                                tokenizer, text_encoder
+                            )
+                            print(f"textual inversion '{emb.token}' applied")
+
                     cache[prompt] = train_util.encode_prompts(
                         tokenizer, text_encoder, [prompt]
                     )
@@ -150,6 +176,9 @@ def train(
     del text_encoder
 
     flush()
+
+    if config.logging.use_wandb:
+        wandb.init(project=f"LECO_{config.save.name}", config=metadata)
 
     pbar = tqdm(range(config.train.iterations))
 

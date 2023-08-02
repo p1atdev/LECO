@@ -18,6 +18,8 @@ class PretrainedModelConfig(BaseModel):
 
     clip_skip: Optional[int] = None
 
+    embeddings_dir: Optional[str] = None
+
 
 class NetworkConfig(BaseModel):
     type: NETWORK_TYPES = "lierla"

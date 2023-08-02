@@ -3,7 +3,6 @@ from pathlib import Path
 import torch
 
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPTextModelWithProjection
-from diffusers.loaders import TextualInversionLoaderMixin
 import safetensors.torch as safe_torch
 
 
@@ -16,12 +15,16 @@ def _load_state_dict(path_to_checkpoint: str | Path) -> torch.Tensor:
     ):
         state_dict = torch.load(path_to_checkpoint, map_location="cpu")
     elif path_to_checkpoint.endswith(".safetensors"):
-        state_dict = safe_torch.load_file(path_to_checkpoint, map_location="cpu")
+        state_dict = safe_torch.load_file(path_to_checkpoint, device="cpu")
     else:
         raise ValueError(
             f"Unknown checkpoint format: {path_to_checkpoint}. Supported formats are .ckpt, .pt, .bin, .safetensors"
         )
     return state_dict
+
+
+def _format_token(token: str) -> str:
+    return f"<{token}>"  # TI と同じ名前で学習できるように別の名前にする
 
 
 # ref: https://github.com/huggingface/diffusers/blob/6c49d542a352b556e412d8763592050d3a0dec77/src/diffusers/loaders.py#L641
@@ -51,7 +54,7 @@ class TextualInversionModel:
                     f"Unknown state dict format for textual inversion model: {pretrained_model_name_or_path}"
                 )
 
-            token = model_path.stem
+            token = _format_token(model_path.stem)  # TIと同じ名前で学習できるようにこっちをずらす
 
             return TextualInversionModel(token, embedding)
         else:
@@ -108,3 +111,23 @@ class TextualInversionModel:
             text_encoder.get_input_embeddings().weight.data[token_id] = embedding
 
         return tokenizer, text_encoder
+
+
+def get_all_embeddings_in_folder(path_to_embeddings: str | Path) -> list[Path]:
+    path_to_embeddings = Path(path_to_embeddings)
+
+    if path_to_embeddings.exists():
+        # 再帰的に全部取得 (拡張子が .bin, .pt, .ckpt, .safetensors のもの)
+        embeddings = []
+        for path in path_to_embeddings.glob("**/*"):
+            if path.suffix in [".bin", ".pt", ".ckpt", ".safetensors"]:
+                embeddings.append(path)
+        return embeddings
+    else:
+        raise ValueError(f"{path_to_embeddings} is not exists.")
+
+
+def filter_embeddings_by_prompt(embeddings: list[Path], prompt: str):
+    return [
+        embedding for embedding in embeddings if _format_token(embedding.stem) in prompt
+    ]
