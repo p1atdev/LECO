@@ -19,16 +19,21 @@ SD15_MODEL = "runwayml/stable-diffusion-v1-5"
 def main(args):
     ti_path = args.ti_path
     prompt = args.prompt
+    model = args.model
+    v2 = args.v2
+    v_pred = args.v_pred
+    width = args.width
+    height = args.height
 
     ti = load_textual_inversion(
         ti_path,
     )
 
     tokenizer, text_encoder, unet, vae, scheduler = load_models(
-        SD15_MODEL,
+        model,
         "euler_a",
-        v2=False,
-        v_pred=False,
+        v2=v2,
+        v_pred=v_pred,
         weight_dtype=torch.float16,
     )
     text_encoder.to(DEVICE_CUDA, dtype=torch.float16)
@@ -63,8 +68,8 @@ def main(args):
         vae,
         positive=encoded_2,
         negative=encode_prompts(tokenizer, text_encoder, [""]),
-        width=512,
-        height=512,
+        width=width,
+        height=height,
     )
 
     for i, img in enumerate(image):
@@ -75,6 +80,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("ti_path", type=str)
     parser.add_argument("prompt", type=str)
+    parser.add_argument("--model", type=str, default=SD15_MODEL)
+    parser.add_argument("--v2", action="store_true")
+    parser.add_argument("--v_pred", action="store_true")
+    parser.add_argument("--width", type=int, default=512)
+    parser.add_argument("--height", type=int, default=512)
 
     args = parser.parse_args()
 
