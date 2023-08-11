@@ -338,7 +338,7 @@ def get_optimizer(name: str):
 
         if name == "dadaptadam":
             return dadaptation.DAdaptAdam
-        elif name == "dadaptLion":
+        elif name == "dadaptlion":
             return dadaptation.DAdaptLion
         else:
             raise ValueError("DAdapt optimizer must be dadaptadam or dadaptlion")
