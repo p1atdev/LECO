@@ -10,3 +10,4 @@ lion-pytorch
 prodigyopt
 wandb
 omegaconf
+invisible-watermark==0.2.0
