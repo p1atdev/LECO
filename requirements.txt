@@ -1,6 +1,6 @@
-diffusers
-transformers
-accelerate
+diffusers==0.20.0
+transformers==4.33.1
+accelerate==0.22.0
 scipy
 safetensors
 pyyaml
