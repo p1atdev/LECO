@@ -42,8 +42,8 @@ def train(
     prompts: list[PromptSettings],
 ):
     metadata = {
-        "prompts": ",".join([prompt.json() for prompt in prompts]),
-        "config": config.json(),
+        "prompts": ",".join([prompt.model_dump_json() for prompt in prompts]),
+        "config": config.model_dump_json(),
     }
     save_path = Path(config.save.path)
 
@@ -76,8 +76,10 @@ def train(
         text_encoder.eval()
 
     unet.to(DEVICE_CUDA, dtype=weight_dtype)
+
     if config.other.use_xformers:
         unet.enable_xformers_memory_efficient_attention()
+
     unet.requires_grad_(False)
     unet.eval()
 
@@ -90,15 +92,17 @@ def train(
     ).to(DEVICE_CUDA, dtype=weight_dtype)
 
     optimizer_module = train_util.get_optimizer(config.train.optimizer)
-    #optimizer_args
+    # optimizer_args
     optimizer_kwargs = {}
     if config.train.optimizer_args is not None and len(config.train.optimizer_args) > 0:
         for arg in config.train.optimizer_args.split(" "):
             key, value = arg.split("=")
             value = ast.literal_eval(value)
             optimizer_kwargs[key] = value
-            
-    optimizer = optimizer_module(network.prepare_optimizer_params(), lr=config.train.lr, **optimizer_kwargs)
+
+    optimizer = optimizer_module(
+        network.prepare_optimizer_params(), lr=config.train.lr, **optimizer_kwargs
+    )
     lr_scheduler = train_util.get_lr_scheduler(
         config.train.lr_scheduler,
         optimizer,
