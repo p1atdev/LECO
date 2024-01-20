@@ -18,9 +18,10 @@ class PromptEmbedsXL:
     text_embeds: torch.FloatTensor
     pooled_embeds: torch.FloatTensor
 
-    def __init__(self, *args) -> None:
-        self.text_embeds = args[0]
-        self.pooled_embeds = args[1]
+    def __init__(
+        self, text_embeds_pair: tuple[torch.FloatTensor, torch.FloatTensor]
+    ) -> None:
+        self.text_embeds, self.pooled_embeds = text_embeds_pair
 
 
 # SDv1.x, SDv2.x は FloatTensor、XL は PromptEmbedsXL
