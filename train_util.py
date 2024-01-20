@@ -18,7 +18,7 @@ UNET_PROJECTION_CLASS_EMBEDDING_INPUT_DIM = 2816
 
 
 def get_random_noise(
-    batch_size: int, height: int, width: int, generator: torch.Generator = None
+    batch_size: int, height: int, width: int, generator: torch.Generator | None = None
 ) -> torch.Tensor:
     return torch.randn(
         (
@@ -46,13 +46,13 @@ def get_initial_latents(
     height: int,
     width: int,
     n_prompts: int,
-    generator=None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     noise = get_random_noise(n_imgs, height, width, generator=generator).repeat(
         n_prompts, 1, 1, 1
     )
 
-    latents = noise * scheduler.init_noise_sigma
+    latents = noise * scheduler.init_noise_sigma.to(noise.device)
 
     return latents
 
@@ -364,7 +364,7 @@ def get_optimizer(name: str):
             return Lion
         elif name == "prodigy":
             import prodigyopt
-            
+
             return prodigyopt.Prodigy
         else:
             raise ValueError("Optimizer must be adam, adamw, lion or Prodigy")
