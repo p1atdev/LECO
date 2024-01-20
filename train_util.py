@@ -18,7 +18,7 @@ UNET_PROJECTION_CLASS_EMBEDDING_INPUT_DIM = 2816
 
 
 def get_random_noise(
-    batch_size: int, height: int, width: int, generator: torch.Generator = None
+    batch_size: int, height: int, width: int, generator: torch.Generator | None = None
 ) -> torch.Tensor:
     return torch.randn(
         (
@@ -46,13 +46,13 @@ def get_initial_latents(
     height: int,
     width: int,
     n_prompts: int,
-    generator=None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     noise = get_random_noise(n_imgs, height, width, generator=generator).repeat(
         n_prompts, 1, 1, 1
     )
 
-    latents = noise * scheduler.init_noise_sigma
+    latents = noise * scheduler.init_noise_sigma.to(noise.device)
 
     return latents
 
@@ -222,8 +222,8 @@ def predict_noise_xl(
     text_embeddings: torch.FloatTensor,  # uncond な text embed と cond な text embed を結合したもの
     add_text_embeddings: torch.FloatTensor,  # pooled なやつ
     add_time_ids: torch.FloatTensor,
-    guidance_scale=7.5,
-    guidance_rescale=0.7,
+    guidance_scale: float = 7.5,
+    guidance_rescale: float = 0.0,
 ) -> torch.FloatTensor:
     # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
     latent_model_input = torch.cat([latents] * 2)
@@ -250,9 +250,10 @@ def predict_noise_xl(
     )
 
     # https://github.com/huggingface/diffusers/blob/7a91ea6c2b53f94da930a61ed571364022b21044/src/diffusers/pipelines/stable_diffusion_xl/pipeline_stable_diffusion_xl.py#L775
-    noise_pred = rescale_noise_cfg(
-        noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
-    )
+    if guidance_rescale > 0.0:
+        guided_target = rescale_noise_cfg(
+            guided_target, noise_pred_text, guidance_rescale=guidance_rescale
+        )
 
     return guided_target
 
@@ -281,7 +282,6 @@ def diffusion_xl(
             add_text_embeddings,
             add_time_ids,
             guidance_scale=guidance_scale,
-            guidance_rescale=0.7,
         )
 
         # compute the previous noisy sample x_t -> x_t-1
@@ -364,7 +364,7 @@ def get_optimizer(name: str):
             return Lion
         elif name == "prodigy":
             import prodigyopt
-            
+
             return prodigyopt.Prodigy
         else:
             raise ValueError("Optimizer must be adam, adamw, lion or Prodigy")
